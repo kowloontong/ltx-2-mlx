@@ -103,7 +103,8 @@ examples:
     kf.add_argument("--fps", type=float, default=24.0, help="Frame rate (default: 24)")
     kf.add_argument("--stage1-steps", type=int, default=None, help="Stage 1 denoising steps")
     kf.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 denoising steps")
-    kf.add_argument("--cfg-scale", type=float, default=1.0, help="CFG guidance scale for stage 1 (1.0 = none)")
+    kf.add_argument("--cfg-scale", type=float, default=None, help="Override CFG scale (default: 3.0 video, 7.0 audio)")
+    kf.add_argument("--stg-scale", type=float, default=None, help="Override STG scale (default: 1.0)")
     kf.add_argument(
         "--dev-transformer",
         default=None,
@@ -353,6 +354,27 @@ def _cmd_keyframe(args: argparse.Namespace) -> None:
         distilled_lora=args.distilled_lora,
         distilled_lora_strength=args.lora_strength,
     )
+    # Build guider params with CLI overrides (defaults match LTX_2_3_PARAMS)
+    video_gp = None
+    audio_gp = None
+    if args.cfg_scale is not None or args.stg_scale is not None:
+        from ltx_core_mlx.components.guiders import MultiModalGuiderParams
+
+        video_gp = MultiModalGuiderParams(
+            cfg_scale=args.cfg_scale if args.cfg_scale is not None else 3.0,
+            stg_scale=args.stg_scale if args.stg_scale is not None else 1.0,
+            rescale_scale=0.7,
+            modality_scale=3.0,
+            stg_blocks=[28],
+        )
+        audio_gp = MultiModalGuiderParams(
+            cfg_scale=7.0,
+            stg_scale=args.stg_scale if args.stg_scale is not None else 1.0,
+            rescale_scale=0.7,
+            modality_scale=3.0,
+            stg_blocks=[28],
+        )
+
     pipe.generate_and_save(
         prompt=args.prompt,
         output_path=args.output,
@@ -365,7 +387,8 @@ def _cmd_keyframe(args: argparse.Namespace) -> None:
         seed=args.seed,
         stage1_steps=args.stage1_steps,
         stage2_steps=args.stage2_steps,
-        cfg_scale=args.cfg_scale,
+        video_guider_params=video_gp,
+        audio_guider_params=audio_gp,
     )
     _print_result(args.output, t0, args.quiet)
 

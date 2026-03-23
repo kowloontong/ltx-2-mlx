@@ -206,7 +206,8 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         seed: int = 42,
         stage1_steps: int | None = None,
         stage2_steps: int | None = None,
-        cfg_scale: float = 1.0,
+        video_guider_params: MultiModalGuiderParams | None = None,
+        audio_guider_params: MultiModalGuiderParams | None = None,
         negative_prompt_embeds: tuple[mx.array, mx.array] | None = None,
     ) -> tuple[mx.array, mx.array]:
         """Generate video interpolating between keyframes using two-stage pipeline.
@@ -222,7 +223,8 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             seed: Random seed.
             stage1_steps: Stage 1 denoising steps.
             stage2_steps: Stage 2 denoising steps.
-            cfg_scale: CFG guidance scale for stage 1 (1.0 = no guidance).
+            video_guider_params: Video guidance params. Defaults to LTX_2_3_PARAMS.
+            audio_guider_params: Audio guidance params. Defaults to LTX_2_3_PARAMS.
             negative_prompt_embeds: Optional (video_neg, audio_neg) for CFG.
 
         Returns:
@@ -252,8 +254,12 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             tokens = _encode_keyframe(vae_encoder, img, up_h, up_w)
             kf_tokens_full.append(tokens)
 
-        # Force evaluation before freeing encoder — ensures all Metal
-        # operations using the encoder weights are complete
+        # Keep per_channel_statistics for upsampler normalization (reference:
+        # upsample_video wraps with un_normalize/normalize). These are tiny (128 floats each).
+        self._encoder_mean = vae_encoder.per_channel_statistics.mean_of_means
+        self._encoder_std = vae_encoder.per_channel_statistics.std_of_means
+
+        # Force evaluation before freeing encoder
         mx.eval(*(kf_tokens_half + kf_tokens_full))
         del vae_encoder
         aggressive_cleanup()
@@ -278,17 +284,30 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
 
         video_embeds, audio_embeds = self._encode_text(prompt)
 
+        # Default guider params matching reference LTX_2_3_PARAMS
+        if video_guider_params is None:
+            video_guider_params = MultiModalGuiderParams(
+                cfg_scale=3.0,
+                stg_scale=1.0,
+                rescale_scale=0.7,
+                modality_scale=3.0,
+                stg_blocks=[28],
+            )
+        if audio_guider_params is None:
+            audio_guider_params = MultiModalGuiderParams(
+                cfg_scale=7.0,
+                stg_scale=1.0,
+                rescale_scale=0.7,
+                modality_scale=3.0,
+                stg_blocks=[28],
+            )
+
         # Encode negative prompt for CFG (required for guidance to have effect)
-        neg_video_embeds = None
-        neg_audio_embeds = None
-        if cfg_scale != 1.0:
-            from ltx_pipelines_mlx.utils.constants import DEFAULT_NEGATIVE_PROMPT
+        from ltx_pipelines_mlx.utils.constants import DEFAULT_NEGATIVE_PROMPT
 
-            neg_video_embeds, neg_audio_embeds = self._encode_text(DEFAULT_NEGATIVE_PROMPT)
+        neg_video_embeds, neg_audio_embeds = self._encode_text(DEFAULT_NEGATIVE_PROMPT)
 
-        mx.eval(video_embeds, audio_embeds)
-        if neg_video_embeds is not None:
-            mx.eval(neg_video_embeds, neg_audio_embeds)
+        mx.eval(video_embeds, audio_embeds, neg_video_embeds, neg_audio_embeds)
 
         # Free text encoder before loading transformer
         self.text_encoder = None
@@ -339,40 +358,28 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         # Stage 1 sigma schedule: dev model uses LTX2Scheduler (dynamic schedule),
         # distilled model uses predefined DISTILLED_SIGMAS.
         if use_dev:
-            s1_steps = stage1_steps or 20  # Reference default for non-distilled
-            num_tokens = F * H_half * W_half
-            sigmas_1 = ltx2_schedule(s1_steps, num_tokens=num_tokens)
+            s1_steps = stage1_steps or 30  # Reference default: LTX_2_3_PARAMS.num_inference_steps=30
+            sigmas_1 = ltx2_schedule(s1_steps)  # Default num_tokens=4096 matches reference
         else:
             sigmas_1 = DISTILLED_SIGMAS[: stage1_steps + 1] if stage1_steps else DISTILLED_SIGMAS
         x0_model = X0Model(self.dit)
 
-        if cfg_scale != 1.0:
-            # Use explicitly provided negative embeds, or the auto-encoded DEFAULT_NEGATIVE_PROMPT
-            video_neg = negative_prompt_embeds[0] if negative_prompt_embeds else neg_video_embeds
-            audio_neg = negative_prompt_embeds[1] if negative_prompt_embeds else neg_audio_embeds
-            guider_params = MultiModalGuiderParams(cfg_scale=cfg_scale)
-            video_factory = create_multimodal_guider_factory(guider_params, negative_context=video_neg)
-            audio_factory = create_multimodal_guider_factory(guider_params, negative_context=audio_neg)
+        # Stage 1 always uses guided denoising (matching reference multi_modal_guider_factory)
+        video_neg = negative_prompt_embeds[0] if negative_prompt_embeds else neg_video_embeds
+        audio_neg = negative_prompt_embeds[1] if negative_prompt_embeds else neg_audio_embeds
+        video_factory = create_multimodal_guider_factory(video_guider_params, negative_context=video_neg)
+        audio_factory = create_multimodal_guider_factory(audio_guider_params, negative_context=audio_neg)
 
-            output_1 = guided_denoise_loop(
-                model=x0_model,
-                video_state=video_state_1,
-                audio_state=audio_state_1,
-                video_text_embeds=video_embeds,
-                audio_text_embeds=audio_embeds,
-                video_guider_factory=video_factory,
-                audio_guider_factory=audio_factory,
-                sigmas=sigmas_1,
-            )
-        else:
-            output_1 = denoise_loop(
-                model=x0_model,
-                video_state=video_state_1,
-                audio_state=audio_state_1,
-                video_text_embeds=video_embeds,
-                audio_text_embeds=audio_embeds,
-                sigmas=sigmas_1,
-            )
+        output_1 = guided_denoise_loop(
+            model=x0_model,
+            video_state=video_state_1,
+            audio_state=audio_state_1,
+            video_text_embeds=video_embeds,
+            audio_text_embeds=audio_embeds,
+            video_guider_factory=video_factory,
+            audio_guider_factory=audio_factory,
+            sigmas=sigmas_1,
+        )
         if self.low_memory:
             aggressive_cleanup()
 
@@ -383,9 +390,14 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         if use_dev and self._distilled_lora:
             self._fuse_distilled_lora(self.dit)
 
-        # --- Upscale (then free upsampler — not needed for stage 2) ---
+        # --- Upscale with per-channel normalization (reference: upsample_video) ---
+        # un_normalize → upsample → normalize using VAE encoder statistics
         video_half = self.video_patchifier.unpatchify(gen_tokens_1, (F, H_half, W_half))
+        mean = self._encoder_mean.reshape(1, -1, 1, 1, 1)
+        std = self._encoder_std.reshape(1, -1, 1, 1, 1)
+        video_half = video_half * std + mean  # un_normalize
         video_upscaled = self.upsampler(video_half)
+        video_upscaled = (video_upscaled - mean) / std  # normalize
         mx.eval(video_upscaled)
         if self.low_memory:
             self.upsampler = None
@@ -471,7 +483,8 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         seed: int = 42,
         stage1_steps: int | None = None,
         stage2_steps: int | None = None,
-        cfg_scale: float = 1.0,
+        video_guider_params: MultiModalGuiderParams | None = None,
+        audio_guider_params: MultiModalGuiderParams | None = None,
         **kwargs: object,
     ) -> str:
         """Generate two-stage keyframe interpolation and save to file.
@@ -507,7 +520,8 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             seed=seed,
             stage1_steps=stage1_steps,
             stage2_steps=stage2_steps,
-            cfg_scale=cfg_scale,
+            video_guider_params=video_guider_params,
+            audio_guider_params=audio_guider_params,
         )
 
         # Free any remaining heavy components from generation phase
