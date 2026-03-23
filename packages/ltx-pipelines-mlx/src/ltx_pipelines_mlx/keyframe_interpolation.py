@@ -77,15 +77,24 @@ def _encode_keyframe(
 def _remap_lora_keys(lora_sd: dict[str, mx.array]) -> dict[str, mx.array]:
     """Remap LoRA keys from ComfyUI/diffusion_model format to MLX model format.
 
-    Applies the LTXV_LORA_COMFY_RENAMING_MAP replacements to LoRA keys:
+    Applies the LTXV_LORA_COMFY_RENAMING_MAP replacements plus additional
+    MLX-specific key remapping:
     - ``diffusion_model.`` → ```` (strip prefix)
     - ``.to_out.0.`` → ``.to_out.`` (no Sequential index)
     - ``.ff.net.0.proj.`` → ``.ff.proj_in.`` (MLX naming)
     - ``.ff.net.2.`` → ``.ff.proj_out.`` (MLX naming)
+    - ``.linear_1.`` → ``.linear1.`` (MLX AdaLN naming)
+    - ``.linear_2.`` → ``.linear2.`` (MLX AdaLN naming)
     """
     remapped: dict[str, mx.array] = {}
     for key, value in lora_sd.items():
         new_key = LTXV_LORA_COMFY_RENAMING_MAP.apply_to_key(key)
+        # MLX timestep embedder uses linear1/linear2 (no underscore)
+        new_key = new_key.replace(".linear_1.", ".linear1.").replace(".linear_2.", ".linear2.")
+        # audio_ff uses same net.0.proj / net.2 pattern as ff, but underscore prefix
+        # prevents the .ff.net replacement from matching
+        new_key = new_key.replace("audio_ff.net.0.proj.", "audio_ff.proj_in.")
+        new_key = new_key.replace("audio_ff.net.2.", "audio_ff.proj_out.")
         remapped[new_key] = value
     return remapped
 
