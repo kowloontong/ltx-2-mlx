@@ -351,7 +351,8 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         # distilled model uses predefined DISTILLED_SIGMAS.
         if use_dev:
             s1_steps = stage1_steps or 30  # Reference default: LTX_2_3_PARAMS.num_inference_steps=30
-            sigmas_1 = ltx2_schedule(s1_steps)  # Default num_tokens=4096 matches reference
+            num_tokens = F * H_half * W_half
+            sigmas_1 = ltx2_schedule(s1_steps, num_tokens=num_tokens)
         else:
             sigmas_1 = DISTILLED_SIGMAS[: stage1_steps + 1] if stage1_steps else DISTILLED_SIGMAS
         x0_model = X0Model(self.dit)
