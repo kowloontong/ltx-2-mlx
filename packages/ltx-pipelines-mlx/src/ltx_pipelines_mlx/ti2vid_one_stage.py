@@ -414,28 +414,36 @@ class ImageToVideoPipeline(TextToVideoPipeline):
         Returns:
             Tuple of (video_latent, audio_latent).
         """
-        self.load()
-        assert self.dit is not None
-        assert self.vae_encoder is not None
+        # I2V needs both VAE encoder (for image) and text encoder (for prompt).
+        # In low_memory mode, load and use each before loading the transformer.
 
-        # Encode reference image
-        img_tensor = prepare_image_for_encoding(image, height, width)
-        # Add temporal dim: (1, 3, H, W) -> (1, 3, 1, H, W)
-        img_tensor = img_tensor[:, :, None, :, :]
-        ref_latent = self.vae_encoder.encode(img_tensor)
-        if self.low_memory:
+        # Step 1: Load VAE encoder, encode image, free
+        if self.vae_encoder is None:
+            self.vae_encoder = VideoEncoder()
+            enc_weights = load_split_safetensors(self.model_dir / "vae_encoder.safetensors", prefix="vae_encoder.")
+            enc_weights = {
+                k.replace("._mean_of_means", ".mean_of_means").replace("._std_of_means", ".std_of_means"): v
+                for k, v in enc_weights.items()
+            }
+            self.vae_encoder.load_weights(list(enc_weights.items()))
             aggressive_cleanup()
+
+        img_tensor = prepare_image_for_encoding(image, height, width)
+        ref_latent = self.vae_encoder.encode(img_tensor[:, :, None, :, :])
+        mx.eval(ref_latent)
+        if self.low_memory:
+            self.vae_encoder = None
+            aggressive_cleanup()
+
+        # Step 2: Encode text, then load remaining components
+        video_embeds, audio_embeds = self._encode_text_and_load(prompt)
+        assert self.dit is not None
 
         # Compute shapes
         F, H, W = compute_video_latent_shape(num_frames, height, width)
         video_shape = (1, F * H * W, 128)
         audio_T = compute_audio_token_count(num_frames)
         audio_shape = (1, audio_T, 128)
-
-        # Encode text
-        video_embeds, audio_embeds = self._encode_text(prompt)
-        if self.low_memory:
-            aggressive_cleanup()
 
         # Compute positions for RoPE
         video_positions = compute_video_positions(F, H, W)
