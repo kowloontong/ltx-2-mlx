@@ -232,17 +232,47 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         del vae_encoder
         aggressive_cleanup()
 
-        # --- Text encoding + load remaining models ---
+        # --- Text encoding (load Gemma, encode, free) ---
         use_dev = self._dev_transformer is not None
+        if self.text_encoder is None or self.feature_extractor is None:
+            model_dir = self.model_dir
+            if self.text_encoder is None:
+                from ltx_core_mlx.text_encoders.gemma.encoders.base_encoder import GemmaLanguageModel
+
+                self.text_encoder = GemmaLanguageModel()
+                self.text_encoder.load(self._gemma_model_id)
+                aggressive_cleanup()
+            if self.feature_extractor is None:
+                from ltx_core_mlx.text_encoders.gemma.feature_extractor import GemmaFeaturesExtractorV2
+
+                self.feature_extractor = GemmaFeaturesExtractorV2()
+                conn_weights = load_split_safetensors(model_dir / "connector.safetensors", prefix="connector.")
+                self.feature_extractor.connector.load_weights(list(conn_weights.items()))
+                aggressive_cleanup()
+
+        video_embeds, audio_embeds = self._encode_text(prompt)
+        mx.eval(video_embeds, audio_embeds)
+
+        # Free text encoder before loading transformer
+        self.text_encoder = None
+        self.feature_extractor = None
+        aggressive_cleanup()
+
+        # --- Load transformer (dev or distilled) + upsampler only ---
         if use_dev:
-            # Load text encoder + connector, encode, free, then load dev model
-            video_embeds, audio_embeds = self._encode_text_and_load(prompt)
-            # Replace the distilled transformer with the dev model for stage 1
-            self.dit = None
-            aggressive_cleanup()
             self.dit = self._load_dev_transformer()
-        else:
-            video_embeds, audio_embeds = self._encode_text_and_load(prompt)
+        elif self.dit is None:
+            self.dit = LTXModel()
+            transformer_path = self.model_dir / "transformer.safetensors"
+            if not transformer_path.exists():
+                transformer_path = self.model_dir / "transformer-distilled.safetensors"
+            weights = load_split_safetensors(transformer_path, prefix="transformer.")
+            apply_quantization(self.dit, weights)
+            self.dit.load_weights(list(weights.items()))
+            aggressive_cleanup()
+
+        if self.upsampler is None:
+            self._load_upsampler()
 
         assert self.dit is not None
         assert self.upsampler is not None
@@ -315,10 +345,12 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         if use_dev and self._distilled_lora:
             self._fuse_distilled_lora(self.dit)
 
-        # --- Upscale ---
+        # --- Upscale (then free upsampler — not needed for stage 2) ---
         video_half = self.video_patchifier.unpatchify(gen_tokens_1, (F, H_half, W_half))
         video_upscaled = self.upsampler(video_half)
+        mx.eval(video_upscaled)
         if self.low_memory:
+            self.upsampler = None
             aggressive_cleanup()
 
         # --- Stage 2: Upscaled resolution with keyframe conditioning ---
@@ -373,6 +405,12 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             sigmas=sigmas_2,
         )
         if self.low_memory:
+            aggressive_cleanup()
+
+        # Free transformer + upsampler before decode phase
+        if self.low_memory:
+            self.dit = None
+            self.upsampler = None
             aggressive_cleanup()
 
         # Extract generated tokens (without appended keyframe tokens)
@@ -434,7 +472,7 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             cfg_scale=cfg_scale,
         )
 
-        # Free heavy components for VAE decode
+        # Free any remaining heavy components from generation phase
         if self.low_memory:
             self.dit = None
             self.text_encoder = None
@@ -443,22 +481,49 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             self._loaded = False
             aggressive_cleanup()
 
-        # Decode audio
-        assert self.audio_decoder is not None
-        assert self.vocoder is not None
+        # --- Decode phase: load decoders on demand ---
+        from ltx_core_mlx.model.audio_vae.audio_vae import AudioVAEDecoder
+        from ltx_core_mlx.model.audio_vae.bwe import VocoderWithBWE
+        from ltx_core_mlx.model.video_vae.video_vae import VideoDecoder
+        from ltx_core_mlx.utils.weights import remap_audio_vae_keys
+
+        model_dir = self.model_dir
+
+        if self.audio_decoder is None:
+            self.audio_decoder = AudioVAEDecoder()
+            audio_weights = load_split_safetensors(model_dir / "audio_vae.safetensors", prefix="audio_vae.decoder.")
+            all_audio = load_split_safetensors(model_dir / "audio_vae.safetensors", prefix="audio_vae.")
+            for k, v in all_audio.items():
+                if k.startswith("per_channel_statistics."):
+                    audio_weights[k] = v
+            audio_weights = remap_audio_vae_keys(audio_weights)
+            self.audio_decoder.load_weights(list(audio_weights.items()))
+            aggressive_cleanup()
+
+        if self.vocoder is None:
+            self.vocoder = VocoderWithBWE()
+            vocoder_weights = load_split_safetensors(model_dir / "vocoder.safetensors", prefix="vocoder.")
+            self.vocoder.load_weights(list(vocoder_weights.items()))
+            aggressive_cleanup()
+
         mel = self.audio_decoder.decode(audio_latent)
         waveform = self.vocoder(mel)
         if self.low_memory:
+            self.audio_decoder = None
+            self.vocoder = None
             aggressive_cleanup()
 
-        # Save audio to temp file
         import tempfile
 
         audio_path = tempfile.mktemp(suffix=".wav")
         self._save_waveform(waveform, audio_path, sample_rate=48000)
 
-        # Decode video and stream to ffmpeg
-        assert self.vae_decoder is not None
+        if self.vae_decoder is None:
+            self.vae_decoder = VideoDecoder()
+            vae_weights = load_split_safetensors(model_dir / "vae_decoder.safetensors", prefix="vae_decoder.")
+            self.vae_decoder.load_weights(list(vae_weights.items()))
+            aggressive_cleanup()
+
         self.vae_decoder.decode_and_stream(video_latent, output_path, fps=fps, audio_path=audio_path)
 
         Path(audio_path).unlink(missing_ok=True)
