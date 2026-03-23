@@ -390,14 +390,11 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         if use_dev and self._distilled_lora:
             self._fuse_distilled_lora(self.dit)
 
-        # --- Upscale with per-channel normalization (reference: upsample_video) ---
-        # un_normalize → upsample → normalize using VAE encoder statistics
+        # --- Upscale (reference: upsample_video with per-channel normalization) ---
+        from ltx_core_mlx.model.upsampler import upsample_video
+
         video_half = self.video_patchifier.unpatchify(gen_tokens_1, (F, H_half, W_half))
-        mean = self._encoder_mean.reshape(1, -1, 1, 1, 1)
-        std = self._encoder_std.reshape(1, -1, 1, 1, 1)
-        video_half = video_half * std + mean  # un_normalize
-        video_upscaled = self.upsampler(video_half)
-        video_upscaled = (video_upscaled - mean) / std  # normalize
+        video_upscaled = upsample_video(video_half, self._encoder_mean, self._encoder_std, self.upsampler)
         mx.eval(video_upscaled)
         if self.low_memory:
             self.upsampler = None

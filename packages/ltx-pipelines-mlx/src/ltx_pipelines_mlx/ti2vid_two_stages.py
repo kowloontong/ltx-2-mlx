@@ -130,9 +130,22 @@ class TwoStagePipeline(TextToVideoPipeline):
         if self.low_memory:
             aggressive_cleanup()
 
-        # Unpatchify and upscale
+        # Unpatchify and upscale (reference: upsample_video with normalization)
+        from ltx_core_mlx.model.upsampler import upsample_video
+
         video_half = self.video_patchifier.unpatchify(output_1.video_latent, (F, H_half, W_half))
-        video_upscaled = self.upsampler(video_half)
+        # Load per-channel statistics from VAE encoder for upsampler normalization
+        enc_stats = load_split_safetensors(self.model_dir / "vae_encoder.safetensors", prefix="vae_encoder.")
+        enc_mean = enc_stats.get(
+            "per_channel_statistics.mean_of_means",
+            enc_stats.get("per_channel_statistics._mean_of_means", mx.zeros(128)),
+        )
+        enc_std = enc_stats.get(
+            "per_channel_statistics.std_of_means",
+            enc_stats.get("per_channel_statistics._std_of_means", mx.ones(128)),
+        )
+        video_upscaled = upsample_video(video_half, enc_mean, enc_std, self.upsampler)
+        del enc_stats
         if self.low_memory:
             aggressive_cleanup()
 

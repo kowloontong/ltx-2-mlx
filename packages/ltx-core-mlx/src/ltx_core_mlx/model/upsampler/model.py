@@ -376,3 +376,31 @@ class LatentUpsampler(nn.Module):
             spatial_scale=config.get("spatial_scale", 2.0),
             rational_resampler=config.get("rational_resampler", False),
         )
+
+
+def upsample_video(
+    latent: mx.array,
+    mean: mx.array,
+    std: mx.array,
+    upsampler: LatentUpsampler,
+) -> mx.array:
+    """Upsample a video latent with per-channel normalization.
+
+    Ported from ltx-core ``upsample_video``: un-normalize → upsample → normalize
+    using the VAE encoder's per-channel statistics.
+
+    Args:
+        latent: Input latent (B, C, F, H, W).
+        mean: Per-channel mean from VAE encoder (128,).
+        std: Per-channel std from VAE encoder (128,).
+        upsampler: LatentUpsampler module.
+
+    Returns:
+        Upsampled and re-normalized latent (B, C, F, H*2, W*2).
+    """
+    m = mean.reshape(1, -1, 1, 1, 1)
+    s = std.reshape(1, -1, 1, 1, 1)
+    latent = latent * s + m  # un_normalize
+    latent = upsampler(latent)
+    latent = (latent - m) / s  # normalize
+    return latent
