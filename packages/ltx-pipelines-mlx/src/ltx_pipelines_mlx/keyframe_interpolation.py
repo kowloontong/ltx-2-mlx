@@ -56,6 +56,11 @@ def _encode_keyframe(
 ) -> mx.array:
     """Encode a keyframe image at a specific resolution.
 
+    If the target resolution produces odd latent dims (not divisible by 64),
+    encodes at the next 64-multiple and crops the latent tokens to match the
+    target latent grid. This avoids the VAE encoder's space-to-depth stride=2
+    constraint while producing tokens at the correct spatial dimensions.
+
     Args:
         vae_encoder: VAE encoder.
         image: PIL Image or path.
@@ -63,12 +68,24 @@ def _encode_keyframe(
         width: Target pixel width.
 
     Returns:
-        Patchified keyframe tokens (1, H*W, 128).
+        Patchified keyframe tokens (1, H_lat*W_lat, 128).
     """
-    img_tensor = prepare_image_for_encoding(image, height, width)
-    # (1, 3, H, W) -> (1, 3, 1, H, W) for single-frame video encoding
+    target_lat_h = height // 32
+    target_lat_w = width // 32
+
+    # VAE encoder needs even latent dims (space-to-depth stride=2).
+    # Encode at the next valid resolution and crop if needed.
+    enc_h = height if target_lat_h % 2 == 0 else (target_lat_h + 1) * 32
+    enc_w = width if target_lat_w % 2 == 0 else (target_lat_w + 1) * 32
+
+    img_tensor = prepare_image_for_encoding(image, enc_h, enc_w)
     latent = vae_encoder.encode(img_tensor[:, :, None, :, :])
-    mx.eval(latent)  # Force evaluation to avoid graph buildup
+    mx.eval(latent)
+
+    # Crop to target latent dims if we encoded at a larger resolution
+    # latent shape: (1, 128, 1, H_enc, W_enc) in BCFHW
+    latent = latent[:, :, :, :target_lat_h, :target_lat_w]
+
     # (1, 128, 1, H', W') -> (1, H'*W', 128) tokens
     tokens = latent.transpose(0, 2, 3, 4, 1).reshape(1, -1, 128)
     return tokens
@@ -211,10 +228,10 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         Returns:
             Tuple of (video_latent, audio_latent) at full resolution.
         """
-        # Compute half-res dims that are VAE-encoder compatible:
-        # - Must be divisible by 64 for even latent dims (space-to-depth needs stride=2)
-        half_h = (height // 2) // 64 * 64
-        half_w = (width // 2) // 64 * 64
+        # Use exact half dimensions like the reference. The VAE encoder
+        # handles odd latent dims via encode-at-larger + crop in _encode_keyframe.
+        half_h = height // 2
+        half_w = width // 2
 
         # Compute the actual upscaled resolution (upsampler doubles spatial latent dims).
         # This determines the full-res keyframe encoding resolution.
