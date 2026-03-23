@@ -149,7 +149,7 @@ class GemmaLanguageModel(nn.Module):
         # single massive Metal command buffer that can exceed the macOS GPU
         # watchdog timeout (kIOGPUCommandBufferCallbackErrorImpactingInteractivity),
         # especially under thermal throttling after a prior long run.
-        eval_every = 4
+        eval_every = 1
         for i, layer in enumerate(inner.layers):
             h = layer(h, mask=combined_mask, cache=None)
             if isinstance(h, tuple):

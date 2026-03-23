@@ -220,15 +220,15 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         for img in keyframe_images:
             tokens = _encode_keyframe(vae_encoder, img, half_h, half_w)
             kf_tokens_half.append(tokens)
-        mx.async_eval(*kf_tokens_half)
 
-        # Encode at the actual upscaled resolution, not the target resolution
         kf_tokens_full = []
         for img in keyframe_images:
             tokens = _encode_keyframe(vae_encoder, img, up_h, up_w)
             kf_tokens_full.append(tokens)
-        mx.async_eval(*kf_tokens_full)
 
+        # Force evaluation before freeing encoder — ensures all Metal
+        # operations using the encoder weights are complete
+        mx.eval(*(kf_tokens_half + kf_tokens_full))
         del vae_encoder
         aggressive_cleanup()
 
