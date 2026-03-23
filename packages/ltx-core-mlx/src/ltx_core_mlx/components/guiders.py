@@ -128,7 +128,7 @@ class MultiModalGuider:
         )
 
         if self.params.rescale_scale != 0:
-            factor = mx.sqrt(mx.mean(cond**2)) / (mx.sqrt(mx.mean(pred**2)) + 1e-8)
+            factor = mx.sqrt(mx.var(cond)) / (mx.sqrt(mx.var(pred)) + 1e-8)
             factor = self.params.rescale_scale * factor + (1 - self.params.rescale_scale)
             pred = pred * factor
 

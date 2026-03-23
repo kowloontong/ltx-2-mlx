@@ -88,17 +88,19 @@ def compute_audio_positions(
         positions: (1, T, 1) float32 positions in seconds.
     """
     # Reference: _get_audio_latent_time_in_sec(idx, shift=0):
-    #   time = max(0, (idx + 1 - downsample_factor) * downsample_factor) * hop_length / sample_rate
+    #   audio_mel_frame = idx * downsample_factor
+    #   causal: audio_mel_frame = (audio_mel_frame + 1 - downsample_factor).clip(min=0)
+    #   time = audio_mel_frame * hop_length / sample_rate
     # For token i: start = _get(i), end = _get(i+1)
     # Midpoint = (start + end) / 2
     idx = mx.arange(num_tokens).astype(mx.float32)
     starts = (
-        mx.maximum((idx + 1 - AUDIO_DOWNSAMPLE_FACTOR) * AUDIO_DOWNSAMPLE_FACTOR, 0.0)
+        mx.maximum(idx * AUDIO_DOWNSAMPLE_FACTOR + 1 - AUDIO_DOWNSAMPLE_FACTOR, 0.0)
         * AUDIO_HOP_LENGTH
         / AUDIO_SAMPLE_RATE
     )
     ends = (
-        mx.maximum((idx + 2 - AUDIO_DOWNSAMPLE_FACTOR) * AUDIO_DOWNSAMPLE_FACTOR, 0.0)
+        mx.maximum((idx + 1) * AUDIO_DOWNSAMPLE_FACTOR + 1 - AUDIO_DOWNSAMPLE_FACTOR, 0.0)
         * AUDIO_HOP_LENGTH
         / AUDIO_SAMPLE_RATE
     )

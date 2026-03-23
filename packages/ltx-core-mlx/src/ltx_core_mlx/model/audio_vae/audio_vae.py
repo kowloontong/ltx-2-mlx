@@ -30,7 +30,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 
-def pixel_norm(x: mx.array, eps: float = 1e-8) -> mx.array:
+def pixel_norm(x: mx.array, eps: float = 1e-6) -> mx.array:
     """RMS normalization over the channel dimension (PixelNorm)."""
     return mx.fast.rms_norm(x, weight=None, eps=eps)
 

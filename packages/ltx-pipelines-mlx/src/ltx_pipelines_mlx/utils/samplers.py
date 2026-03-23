@@ -24,6 +24,20 @@ from ltx_pipelines_mlx.scheduler import DISTILLED_SIGMAS
 from ltx_pipelines_mlx.utils.res2s import get_res2s_coefficients, phi
 
 
+def _channelwise_normalize(x: mx.array) -> mx.array:
+    """Normalize noise to zero mean and unit std per channel.
+
+    Matches reference _channelwise_normalize + global normalization in _get_new_noise.
+    Input x has shape (B, N, C) where N = num_tokens.
+    """
+    # Global normalization first: zero-mean, unit-std
+    x = (x - mx.mean(x)) / (mx.std(x) + 1e-8)
+    # Per-channel normalization over token dimension
+    mean = mx.mean(x, axis=1, keepdims=True)
+    std = mx.std(x, axis=1, keepdims=True) + 1e-8
+    return (x - mean) / std
+
+
 @dataclass
 class DenoiseOutput:
     """Output of the denoising loop."""
@@ -375,10 +389,10 @@ def res2s_denoise_loop(
         x_mid_v = x_anchor_v + h * a21 * eps_1_v
         x_mid_a = x_anchor_a + h * a21 * eps_1_a
 
-        # SDE noise at substep
+        # SDE noise at substep (channel-normalized to match reference)
         mx.random.seed(step_idx * 10000 + 1)
-        sub_noise_v = mx.random.normal(video_x.shape).astype(mx.float32)
-        sub_noise_a = mx.random.normal(audio_x.shape).astype(mx.float32)
+        sub_noise_v = _channelwise_normalize(mx.random.normal(video_x.shape).astype(mx.float32))
+        sub_noise_a = _channelwise_normalize(mx.random.normal(audio_x.shape).astype(mx.float32))
         x_mid_v = _sde_step(x_anchor_v, x_mid_v, sigma, sub_sigma, sub_noise_v).astype(mx.float32)
         x_mid_a = _sde_step(x_anchor_a, x_mid_a, sigma, sub_sigma, sub_noise_a).astype(mx.float32)
 
@@ -400,10 +414,10 @@ def res2s_denoise_loop(
         x_next_v = x_anchor_v + h * (b1 * eps_1_v + b2 * eps_2_v)
         x_next_a = x_anchor_a + h * (b1 * eps_1_a + b2 * eps_2_a)
 
-        # SDE noise at step level
+        # SDE noise at step level (channel-normalized to match reference)
         mx.random.seed(step_idx * 10000 + 2)
-        step_noise_v = mx.random.normal(video_x.shape).astype(mx.float32)
-        step_noise_a = mx.random.normal(audio_x.shape).astype(mx.float32)
+        step_noise_v = _channelwise_normalize(mx.random.normal(video_x.shape).astype(mx.float32))
+        step_noise_a = _channelwise_normalize(mx.random.normal(audio_x.shape).astype(mx.float32))
         video_x = _sde_step(x_anchor_v, x_next_v, sigma, sigma_next, step_noise_v).astype(mx.float32)
         audio_x = _sde_step(x_anchor_a, x_next_a, sigma, sigma_next, step_noise_a).astype(mx.float32)
 

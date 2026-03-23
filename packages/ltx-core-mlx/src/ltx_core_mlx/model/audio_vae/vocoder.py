@@ -89,12 +89,14 @@ class DownSample1d(nn.Module):
         # Reshape for grouped conv1d: (B*C, T, 1)
         x = x.transpose(0, 2, 1).reshape(B * C, T, 1)
 
-        # Pad — asymmetric to match reference DownSample1d
+        # Replicate pad — matches reference LowPassFilter1d(padding_mode='replicate')
         K = self.lowpass.filter.shape[1]
         even = 1 if K % 2 == 0 else 0
         pad_left = K // 2 - even
         pad_right = K // 2
-        x = mx.pad(x, [(0, 0), (pad_left, pad_right), (0, 0)])
+        left_edge = mx.repeat(x[:, :1, :], pad_left, axis=1)
+        right_edge = mx.repeat(x[:, -1:, :], pad_right, axis=1)
+        x = mx.concatenate([left_edge, x, right_edge], axis=1)
 
         # Apply filter — already in MLX (O=1, K, I=1) format
         x = mx.conv1d(x, self.lowpass.filter, stride=2)
@@ -127,7 +129,9 @@ class UpSample1d(nn.Module):
 
         K = self.filter.shape[1]
         pad = K // 2
-        x_up = mx.pad(x_up, [(0, 0), (pad, pad - 1), (0, 0)])
+        left_edge = mx.repeat(x_up[:, :1, :], pad, axis=1)
+        right_edge = mx.repeat(x_up[:, -1:, :], pad - 1, axis=1)
+        x_up = mx.concatenate([left_edge, x_up, right_edge], axis=1)
 
         # Filter already in MLX (O=1, K, I=1) format
         x_up = mx.conv1d(x_up, self.filter)

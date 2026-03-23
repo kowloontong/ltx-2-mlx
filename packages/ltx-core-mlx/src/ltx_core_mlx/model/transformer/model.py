@@ -240,11 +240,12 @@ class LTXModel(nn.Module):
             vt_emb = self._embed_timestep_per_token(video_timesteps)
             video_adaln_emb, video_embedded_ts = self._adaln_per_token(self.adaln_single, vt_emb)
             av_ca_video_emb, _ = self._adaln_per_token(self.av_ca_video_scale_shift_adaln_single, vt_emb)
-            av_ca_a2v_gate_emb, _ = self._adaln_per_token(self.av_ca_a2v_gate_adaln_single, vt_emb)
         else:
             video_adaln_emb, video_embedded_ts = self.adaln_single(t_emb)
             av_ca_video_emb, _ = self.av_ca_video_scale_shift_adaln_single(t_emb)
-            av_ca_a2v_gate_emb, _ = self.av_ca_a2v_gate_adaln_single(t_emb_av_gate)
+        # AV cross-attention gate always uses scalar timestep at av_ca scale,
+        # even in per-token mode. Reference: gate_adaln receives sigma * av_ca_factor (scalar).
+        av_ca_a2v_gate_emb, _ = self.av_ca_a2v_gate_adaln_single(t_emb_av_gate)
         # Prompt AdaLN: always scalar (from global timestep)
         video_prompt_emb, _ = self.prompt_adaln_single(t_emb)
 
@@ -253,11 +254,11 @@ class LTXModel(nn.Module):
             at_emb = self._embed_timestep_per_token(audio_timesteps)
             audio_adaln_emb, audio_embedded_ts = self._adaln_per_token(self.audio_adaln_single, at_emb)
             av_ca_audio_emb, _ = self._adaln_per_token(self.av_ca_audio_scale_shift_adaln_single, at_emb)
-            av_ca_v2a_gate_emb, _ = self._adaln_per_token(self.av_ca_v2a_gate_adaln_single, at_emb)
         else:
             audio_adaln_emb, audio_embedded_ts = self.audio_adaln_single(t_emb)
             av_ca_audio_emb, _ = self.av_ca_audio_scale_shift_adaln_single(t_emb)
-            av_ca_v2a_gate_emb, _ = self.av_ca_v2a_gate_adaln_single(t_emb_av_gate)
+        # AV cross-attention gate always uses scalar timestep at av_ca scale
+        av_ca_v2a_gate_emb, _ = self.av_ca_v2a_gate_adaln_single(t_emb_av_gate)
         # Audio prompt AdaLN: always scalar (from global timestep)
         audio_prompt_emb, _ = self.audio_prompt_adaln_single(t_emb)
 

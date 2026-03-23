@@ -197,10 +197,13 @@ class TestComputeAudioPositions:
     def test_first_tokens_causal(self):
         """First few tokens should have causal positions (clamped at 0)."""
         positions = compute_audio_positions(num_tokens=10)
-        # Token 0: start = max(0, (0+1-4)*4) * 160/16000 = max(0, -12) * 0.01 = 0
-        #          end   = max(0, (0+2-4)*4) * 160/16000 = max(0, -8)  * 0.01 = 0
-        # mid = 0
-        assert float(positions[0, 0, 0]) == 0.0
+        # Reference: _get_audio_latent_time_in_sec(idx):
+        #   mel_frame = idx * 4; causal: mel_frame = (mel_frame + 1 - 4).clip(0)
+        #   time = mel_frame * 160 / 16000
+        # Token 0: start = max(0, 0*4 + 1 - 4) * 0.01 = 0
+        #          end   = max(0, 1*4 + 1 - 4) * 0.01 = 0.01
+        # mid = 0.005
+        assert abs(float(positions[0, 0, 0]) - 0.005) < 1e-6
 
     def test_later_tokens_positive(self):
         """Later tokens should have positive position values."""

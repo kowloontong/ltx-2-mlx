@@ -101,6 +101,9 @@ examples:
     kf.add_argument("--start", required=True, help="Start keyframe image path")
     kf.add_argument("--end", required=True, help="End keyframe image path")
     kf.add_argument("--fps", type=float, default=24.0, help="Frame rate (default: 24)")
+    kf.add_argument("--stage1-steps", type=int, default=None, help="Stage 1 denoising steps")
+    kf.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 denoising steps")
+    kf.add_argument("--cfg-scale", type=float, default=1.0, help="CFG guidance scale for stage 1 (1.0 = none)")
 
     # --- enhance ---
     enh = sub.add_parser("enhance", help="Enhance a prompt using Gemma (no video generation)")
@@ -324,57 +327,29 @@ def _cmd_keyframe(args: argparse.Namespace) -> None:
     """Interpolate between two keyframe images."""
     t0 = time.time()
 
-    from ltx_core_mlx.components.patchifiers import compute_video_latent_shape
-    from ltx_core_mlx.utils.image import prepare_image_for_encoding
-    from ltx_core_mlx.utils.memory import aggressive_cleanup
-    from ltx_core_mlx.utils.weights import load_split_safetensors
     from ltx_pipelines_mlx.keyframe_interpolation import KeyframeInterpolationPipeline
-    from ltx_pipelines_mlx.ti2vid_one_stage import TextToVideoPipeline
 
     if not args.quiet:
-        print("Mode: Keyframe Interpolation")
+        print("Mode: Keyframe Interpolation (two-stage)")
         print(f"Start: {args.start}, End: {args.end}")
 
-    model_dir = TextToVideoPipeline._resolve_model_dir(args.model)
-
-    # Encode keyframe images
-    from ltx_core_mlx.model.video_vae.video_vae import VideoEncoder
-
-    vae_encoder = VideoEncoder()
-    enc_weights = load_split_safetensors(model_dir / "vae_encoder.safetensors", prefix="vae_encoder.")
-    enc_weights = {
-        k.replace("._mean_of_means", ".mean_of_means").replace("._std_of_means", ".std_of_means"): v
-        for k, v in enc_weights.items()
-    }
-    vae_encoder.load_weights(list(enc_weights.items()))
-
-    lat_start = vae_encoder.encode(prepare_image_for_encoding(args.start, args.height, args.width)[:, :, None, :, :])
-    lat_end = vae_encoder.encode(prepare_image_for_encoding(args.end, args.height, args.width)[:, :, None, :, :])
-    del vae_encoder, enc_weights
-    aggressive_cleanup()
-
-    if not args.quiet:
-        print(f"Keyframes encoded: {lat_start.shape}")
-
-    # Compute pixel frame indices
-    F, _, _ = compute_video_latent_shape(args.frames, args.height, args.width)
     last_pixel_frame = args.frames - 1
 
-    # Interpolate
     pipe = KeyframeInterpolationPipeline(model_dir=args.model, gemma_model_id=args.gemma)
-    video_latent, audio_latent = pipe.interpolate(
+    pipe.generate_and_save(
         prompt=args.prompt,
-        keyframe_latents=[lat_start, lat_end],
+        output_path=args.output,
+        keyframe_images=[args.start, args.end],
         keyframe_indices=[0, last_pixel_frame],
         height=args.height,
         width=args.width,
         num_frames=args.frames,
         fps=args.fps,
         seed=args.seed,
-        num_steps=args.steps,
+        stage1_steps=args.stage1_steps,
+        stage2_steps=args.stage2_steps,
+        cfg_scale=args.cfg_scale,
     )
-
-    _decode_and_save(pipe, video_latent, audio_latent, args)
     _print_result(args.output, t0, args.quiet)
 
 

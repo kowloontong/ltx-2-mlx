@@ -54,8 +54,11 @@ class ConditioningItemAttentionStrengthWrapper:
         # Convert scalar attention_mask to the format expected by update_attention_mask
         attn_mask = self.attention_mask
 
-        # Build the attention mask using the original state as reference
-        num_noisy = original_state.latent.shape[1]
+        # Build the attention mask — num_noisy_tokens must be the ORIGINAL
+        # target token count (F*H*W), not original_state.latent.shape[1]
+        # which may include previously appended conditioning tokens.
+        F, H, W = spatial_dims
+        num_noisy = F * H * W
         new_attention_mask = update_attention_mask(
             latent_state=original_state,
             attention_mask=attn_mask,

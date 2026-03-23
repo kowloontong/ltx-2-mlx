@@ -59,8 +59,11 @@ class VideoConditionByReferenceLatent:
                 ref_pos = ref_pos * scale[None, None, :]
             new_positions = mx.concatenate([state.positions, ref_pos], axis=1)
 
-        # Build attention mask
-        num_noisy = state.latent.shape[1]
+        # Build attention mask — num_noisy_tokens must be the ORIGINAL target
+        # token count (F*H*W), not state.latent.shape[1] which may include
+        # previously appended conditioning tokens.
+        F, H, W = spatial_dims
+        num_noisy = F * H * W
         new_attn_mask = update_attention_mask(
             latent_state=state,
             attention_mask=None,

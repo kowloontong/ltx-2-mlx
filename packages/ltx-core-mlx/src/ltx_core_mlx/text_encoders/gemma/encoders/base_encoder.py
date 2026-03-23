@@ -132,12 +132,20 @@ class GemmaLanguageModel(nn.Module):
         else:
             combined_mask = causal_mask[None, None, :, :]  # (1, 1, T, T)
 
-        # Run layers with combined mask
-        for layer in inner.layers:
+        # Run layers with combined mask.
+        # Periodically evaluate to prevent the lazy computation graph from
+        # growing unbounded. Without this, all 48 layers accumulate into a
+        # single massive Metal command buffer that can exceed the macOS GPU
+        # watchdog timeout (kIOGPUCommandBufferCallbackErrorImpactingInteractivity),
+        # especially under thermal throttling after a prior long run.
+        eval_every = 8
+        for i, layer in enumerate(inner.layers):
             h = layer(h, mask=combined_mask, cache=None)
             if isinstance(h, tuple):
                 h = h[0]
             all_hidden_states.append(h)
+            if (i + 1) % eval_every == 0:
+                mx.eval(h)
 
         return all_hidden_states
 

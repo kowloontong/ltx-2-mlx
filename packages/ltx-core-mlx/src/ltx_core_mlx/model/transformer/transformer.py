@@ -315,43 +315,43 @@ class BasicAVTransformerBlock(nn.Module):
         audio_norm3 = self._rms_norm(audio_hidden)
 
         # A2V: Q from video, KV from audio
+        # Reference applies perturbation mask OUTSIDE attention (attn * gate * mask),
+        # not inside (unlike self-attention which blends with values).
         video_q_a2v = video_norm3 * (1.0 + av_v_scale_a2v) + av_v_shift_a2v
         audio_kv_a2v = audio_norm3 * (1.0 + av_a_scale_a2v) + av_a_shift_a2v
-        a2v_ptb_mask = None
-        if perturbations is not None and perturbations.any_in_batch(PerturbationType.SKIP_A2V_CROSS_ATTN, block_idx):
-            a2v_ptb_mask = perturbations.mask_like(
-                PerturbationType.SKIP_A2V_CROSS_ATTN, block_idx, video_hidden[:, :1, :1, None]
-            )
         a2v_out = (
             self.audio_to_video_attn(
                 video_q_a2v,
                 encoder_hidden_states=audio_kv_a2v,
                 rope_freqs=video_cross_rope_freqs,
                 rope_freqs_k=audio_cross_rope_freqs,
-                perturbation_mask=a2v_ptb_mask,
             )
             * av_v_gate_a2v
         )
+        if perturbations is not None and perturbations.any_in_batch(PerturbationType.SKIP_A2V_CROSS_ATTN, block_idx):
+            a2v_mask = perturbations.mask_like(
+                PerturbationType.SKIP_A2V_CROSS_ATTN, block_idx, video_hidden[:, :1, :1, None]
+            )
+            a2v_out = a2v_out * a2v_mask
         video_hidden = video_hidden + a2v_out
 
         # V2A: Q from audio, KV from video (using pre-A2V norms)
         audio_q_v2a = audio_norm3 * (1.0 + av_a_scale_v2a) + av_a_shift_v2a
         video_kv_v2a = video_norm3 * (1.0 + av_v_scale_v2a) + av_v_shift_v2a
-        v2a_ptb_mask = None
-        if perturbations is not None and perturbations.any_in_batch(PerturbationType.SKIP_V2A_CROSS_ATTN, block_idx):
-            v2a_ptb_mask = perturbations.mask_like(
-                PerturbationType.SKIP_V2A_CROSS_ATTN, block_idx, audio_hidden[:, :1, :1, None]
-            )
         v2a_out = (
             self.video_to_audio_attn(
                 audio_q_v2a,
                 encoder_hidden_states=video_kv_v2a,
                 rope_freqs=audio_cross_rope_freqs,
                 rope_freqs_k=video_cross_rope_freqs,
-                perturbation_mask=v2a_ptb_mask,
             )
             * av_a_gate_v2a
         )
+        if perturbations is not None and perturbations.any_in_batch(PerturbationType.SKIP_V2A_CROSS_ATTN, block_idx):
+            v2a_mask = perturbations.mask_like(
+                PerturbationType.SKIP_V2A_CROSS_ATTN, block_idx, audio_hidden[:, :1, :1, None]
+            )
+            v2a_out = v2a_out * v2a_mask
         audio_hidden = audio_hidden + v2a_out
 
         # --- 7. Video feed-forward (uses indices 3-5) ---
