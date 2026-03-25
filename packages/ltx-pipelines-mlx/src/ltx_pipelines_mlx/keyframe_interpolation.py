@@ -385,10 +385,18 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         if use_dev and self._distilled_lora:
             self._fuse_distilled_lora(self.dit)
 
-        # --- Upscale (then free upsampler — not needed for stage 2) ---
+        # --- Upscale with normalize/denormalize wrapping (matching reference) ---
+        # Reference: un_normalize -> upsampler -> normalize using VAE encoder stats.
+        # Without this, the upsampler produces grid/weave artifacts.
         video_half = self.video_patchifier.unpatchify(gen_tokens_1, (F, H_half, W_half))
-        video_upscaled = self.upsampler(video_half)
-        mx.eval(video_upscaled)
+
+        # Load encoder stats for normalization (encoder itself was already freed)
+        vae_encoder = self._load_vae_encoder()
+        video_denorm = vae_encoder.denormalize_latent(video_half)
+        video_upscaled = self.upsampler(video_denorm)
+        video_upscaled = vae_encoder.normalize_latent(video_upscaled)
+        mx.async_eval(video_upscaled)
+        del vae_encoder
         if self.low_memory:
             self.upsampler = None
             aggressive_cleanup()

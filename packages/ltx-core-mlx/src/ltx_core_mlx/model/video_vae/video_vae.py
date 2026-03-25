@@ -469,6 +469,22 @@ class VideoEncoder(nn.Module):
         std = self.per_channel_statistics.std_of_means.reshape(1, 1, 1, 1, -1)
         return (latent - mean) / std
 
+    def denormalize_latent(self, latent: mx.array) -> mx.array:
+        """Reverse per-channel normalization: x * std + mean.
+
+        Used to unwrap encoder normalization before the upsampler (which
+        operates in un-normalized space) and re-normalize after.
+
+        Args:
+            latent: (B, F, H, W, C) in MLX layout.
+
+        Returns:
+            Denormalized latent.
+        """
+        mean = self.per_channel_statistics.mean_of_means.reshape(1, 1, 1, 1, -1)
+        std = self.per_channel_statistics.std_of_means.reshape(1, 1, 1, 1, -1)
+        return latent * std + mean
+
     def encode(self, pixels: mx.array) -> mx.array:
         """Encode pixel frames to latent.
 
