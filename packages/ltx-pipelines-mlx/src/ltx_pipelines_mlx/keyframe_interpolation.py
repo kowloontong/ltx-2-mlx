@@ -278,18 +278,19 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         self.feature_extractor = None
         aggressive_cleanup()
 
-        # --- Load transformer (dev or distilled) + upsampler only ---
-        if use_dev:
+        # --- Load transformer (dev model required) + upsampler only ---
+        # The distilled model hallucinates during keyframe interpolation.
+        # The dev model + CFG is required for quality results.
+        if not use_dev:
+            raise ValueError(
+                "Keyframe interpolation requires the dev (non-distilled) model. "
+                "The distilled model hallucinates unrelated content during interpolation.\n"
+                "Use: --dev-transformer transformer-dev.safetensors "
+                "--distilled-lora ltx-2.3-22b-distilled-lora-384.safetensors --cfg-scale 3.0\n"
+                "Model repo with both variants: dgrauet/ltx-2.3-mlx-q8"
+            )
+        if self.dit is None:
             self.dit = self._load_dev_transformer()
-        elif self.dit is None:
-            self.dit = LTXModel()
-            transformer_path = self.model_dir / "transformer.safetensors"
-            if not transformer_path.exists():
-                transformer_path = self.model_dir / "transformer-distilled.safetensors"
-            weights = load_split_safetensors(transformer_path, prefix="transformer.")
-            apply_quantization(self.dit, weights)
-            self.dit.load_weights(list(weights.items()))
-            aggressive_cleanup()
 
         if self.upsampler is None:
             self._load_upsampler()
