@@ -355,9 +355,26 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             video_neg = negative_prompt_embeds[0] if negative_prompt_embeds else neg_video_embeds
             audio_neg = negative_prompt_embeds[1] if negative_prompt_embeds else neg_audio_embeds
 
-            # Use full guider params if provided (from CLI), otherwise simple CFG-only
-            vgp = video_guider_params or MultiModalGuiderParams(cfg_scale=cfg_scale)
-            agp = audio_guider_params or MultiModalGuiderParams(cfg_scale=cfg_scale)
+            # Use full guider params if provided, otherwise simple CFG-only.
+            # Force stg_scale=0 until the STG shape bug in attention.py is fixed.
+            if video_guider_params is not None:
+                vgp = MultiModalGuiderParams(
+                    cfg_scale=video_guider_params.cfg_scale,
+                    stg_scale=0.0,
+                    rescale_scale=video_guider_params.rescale_scale,
+                    modality_scale=0.0,  # disabled until STG attention fix
+                )
+            else:
+                vgp = MultiModalGuiderParams(cfg_scale=cfg_scale)
+            if audio_guider_params is not None:
+                agp = MultiModalGuiderParams(
+                    cfg_scale=audio_guider_params.cfg_scale,
+                    stg_scale=0.0,
+                    rescale_scale=audio_guider_params.rescale_scale,
+                    modality_scale=0.0,
+                )
+            else:
+                agp = MultiModalGuiderParams(cfg_scale=cfg_scale)
             video_factory = create_multimodal_guider_factory(vgp, negative_context=video_neg)
             audio_factory = create_multimodal_guider_factory(agp, negative_context=audio_neg)
 
