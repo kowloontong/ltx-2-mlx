@@ -191,6 +191,8 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         stage2_steps: int | None = None,
         cfg_scale: float = 1.0,
         negative_prompt_embeds: tuple[mx.array, mx.array] | None = None,
+        video_guider_params: MultiModalGuiderParams | None = None,
+        audio_guider_params: MultiModalGuiderParams | None = None,
     ) -> tuple[mx.array, mx.array]:
         """Generate video interpolating between keyframes using two-stage pipeline.
 
@@ -348,13 +350,16 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             sigmas_1 = DISTILLED_SIGMAS[: stage1_steps + 1] if stage1_steps else DISTILLED_SIGMAS
         x0_model = X0Model(self.dit)
 
-        if cfg_scale != 1.0:
+        if cfg_scale != 1.0 or video_guider_params is not None:
             # Use explicitly provided negative embeds, or the auto-encoded DEFAULT_NEGATIVE_PROMPT
             video_neg = negative_prompt_embeds[0] if negative_prompt_embeds else neg_video_embeds
             audio_neg = negative_prompt_embeds[1] if negative_prompt_embeds else neg_audio_embeds
-            guider_params = MultiModalGuiderParams(cfg_scale=cfg_scale)
-            video_factory = create_multimodal_guider_factory(guider_params, negative_context=video_neg)
-            audio_factory = create_multimodal_guider_factory(guider_params, negative_context=audio_neg)
+
+            # Use full guider params if provided (from CLI), otherwise simple CFG-only
+            vgp = video_guider_params or MultiModalGuiderParams(cfg_scale=cfg_scale)
+            agp = audio_guider_params or MultiModalGuiderParams(cfg_scale=cfg_scale)
+            video_factory = create_multimodal_guider_factory(vgp, negative_context=video_neg)
+            audio_factory = create_multimodal_guider_factory(agp, negative_context=audio_neg)
 
             output_1 = guided_denoise_loop(
                 model=x0_model,
@@ -487,6 +492,8 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         stage1_steps: int | None = None,
         stage2_steps: int | None = None,
         cfg_scale: float = 1.0,
+        video_guider_params: MultiModalGuiderParams | None = None,
+        audio_guider_params: MultiModalGuiderParams | None = None,
         **kwargs: object,
     ) -> str:
         """Generate two-stage keyframe interpolation and save to file.
@@ -504,6 +511,8 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             stage1_steps: Stage 1 denoising steps.
             stage2_steps: Stage 2 denoising steps.
             cfg_scale: CFG guidance scale for stage 1.
+            video_guider_params: Full video guider params (STG, rescale, modality).
+            audio_guider_params: Full audio guider params.
 
         Returns:
             Path to output video file.
@@ -523,6 +532,8 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
             stage1_steps=stage1_steps,
             stage2_steps=stage2_steps,
             cfg_scale=cfg_scale,
+            video_guider_params=video_guider_params,
+            audio_guider_params=audio_guider_params,
         )
 
         # Free any remaining heavy components from generation phase
