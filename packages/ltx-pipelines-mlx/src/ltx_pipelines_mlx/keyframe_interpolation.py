@@ -391,10 +391,15 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
         video_half = self.video_patchifier.unpatchify(gen_tokens_1, (F, H_half, W_half))
 
         # Load encoder stats for normalization (encoder itself was already freed)
+        # unpatchify returns PyTorch layout (B, C, F, H, W), encoder stats expect MLX (B, F, H, W, C)
         vae_encoder = self._load_vae_encoder()
-        video_denorm = vae_encoder.denormalize_latent(video_half)
+        video_mlx = video_half.transpose(0, 2, 3, 4, 1)  # (B,C,F,H,W) -> (B,F,H,W,C)
+        video_denorm = vae_encoder.denormalize_latent(video_mlx)
+        video_denorm = video_denorm.transpose(0, 4, 1, 2, 3)  # back to (B,C,F,H,W)
         video_upscaled = self.upsampler(video_denorm)
-        video_upscaled = vae_encoder.normalize_latent(video_upscaled)
+        video_up_mlx = video_upscaled.transpose(0, 2, 3, 4, 1)  # (B,C,F,H,W) -> (B,F,H,W,C)
+        video_up_mlx = vae_encoder.normalize_latent(video_up_mlx)
+        video_upscaled = video_up_mlx.transpose(0, 4, 1, 2, 3)  # back to (B,C,F,H,W)
         mx.async_eval(video_upscaled)
         del vae_encoder
         if self.low_memory:
