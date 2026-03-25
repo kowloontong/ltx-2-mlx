@@ -362,7 +362,7 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
                     cfg_scale=video_guider_params.cfg_scale,
                     stg_scale=0.0,
                     rescale_scale=video_guider_params.rescale_scale,
-                    modality_scale=0.0,  # disabled until STG attention fix
+                    modality_scale=1.0,  # 1.0 = disabled (!=1.0 triggers perturbation)
                 )
             else:
                 vgp = MultiModalGuiderParams(cfg_scale=cfg_scale)
@@ -371,7 +371,7 @@ class KeyframeInterpolationPipeline(TwoStagePipeline):
                     cfg_scale=audio_guider_params.cfg_scale,
                     stg_scale=0.0,
                     rescale_scale=audio_guider_params.rescale_scale,
-                    modality_scale=0.0,
+                    modality_scale=1.0,  # 1.0 = disabled
                 )
             else:
                 agp = MultiModalGuiderParams(cfg_scale=cfg_scale)
