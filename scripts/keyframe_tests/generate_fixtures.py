@@ -1,7 +1,11 @@
-"""Generate diverse keyframe test fixture pairs for divergence testing.
+"""Generate realistic keyframe test fixture pairs for interpolation testing.
 
-Creates 5 pairs of 480x704 PNG images exercising different visual properties:
-solid colors, gradients, identity (same image), text overlays, and geometric patterns.
+Creates 5 pairs of 480x704 PNG images from real photographs in tests/fixtures/.
+Uses crops, color shifts, and transforms to create diverse interpolation scenarios.
+
+Source images:
+    - keyframe_start.png / keyframe_end.png (hedgehog 3D character, 832x1472)
+    - test_i2v.png (cat in forest, 2816x1536)
 
 Usage:
     uv run python scripts/keyframe_tests/generate_fixtures.py
@@ -11,11 +15,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+from PIL import Image, ImageEnhance, ImageFilter
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "keyframe_pairs"
+SOURCE_DIR = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
 WIDTH = 704
 HEIGHT = 480
+
+
+def _crop_center(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
+    """Center-crop and resize to target dimensions preserving aspect ratio."""
+    # Resize so the smallest dimension fits, then center crop
+    src_w, src_h = img.size
+    scale = max(target_w / src_w, target_h / src_h)
+    new_w = int(src_w * scale)
+    new_h = int(src_h * scale)
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+    left = (new_w - target_w) // 2
+    top = (new_h - target_h) // 2
+    return img.crop((left, top, left + target_w, top + target_h))
 
 
 def _save_pair(name: str, start: Image.Image, end: Image.Image) -> None:
@@ -23,104 +42,83 @@ def _save_pair(name: str, start: Image.Image, end: Image.Image) -> None:
     FIXTURES_DIR.mkdir(parents=True, exist_ok=True)
     start.save(FIXTURES_DIR / f"{name}_start.png")
     end.save(FIXTURES_DIR / f"{name}_end.png")
-    print(f"  {name}: {FIXTURES_DIR / name}_start.png, {FIXTURES_DIR / name}_end.png")
+    print(f"  {name}: start {start.size}, end {end.size}")
 
 
-def generate_solid_colors() -> None:
-    """Solid red -> Solid blue."""
-    start = Image.new("RGB", (WIDTH, HEIGHT), (255, 0, 0))
-    end = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 255))
-    _save_pair("solid_colors", start, end)
+def generate_hedgehog() -> None:
+    """Original hedgehog pair — the known-working interpolation test."""
+    start = Image.open(SOURCE_DIR / "keyframe_start.png")
+    end = Image.open(SOURCE_DIR / "keyframe_end.png")
+    _save_pair("hedgehog", _crop_center(start, WIDTH, HEIGHT), _crop_center(end, WIDTH, HEIGHT))
 
 
-def generate_gradient() -> None:
-    """Horizontal gradient (black->white) -> Vertical gradient (black->white)."""
-    # Horizontal gradient
-    start = Image.new("RGB", (WIDTH, HEIGHT))
-    for x in range(WIDTH):
-        val = int(255 * x / (WIDTH - 1))
-        for y in range(HEIGHT):
-            start.putpixel((x, y), (val, val, val))
-
-    # Vertical gradient
-    end = Image.new("RGB", (WIDTH, HEIGHT))
-    for y in range(HEIGHT):
-        val = int(255 * y / (HEIGHT - 1))
-        for x in range(WIDTH):
-            end.putpixel((x, y), (val, val, val))
-
-    _save_pair("gradient", start, end)
+def generate_forest_zoom() -> None:
+    """Cat in forest: wide shot -> zoomed-in crop (simulates camera zoom)."""
+    img = Image.open(SOURCE_DIR / "test_i2v.png")
+    # Wide shot: full image
+    start = _crop_center(img, WIDTH, HEIGHT)
+    # Zoom: crop center 50% of original, then resize up
+    src_w, src_h = img.size
+    crop_w, crop_h = src_w // 2, src_h // 2
+    left = (src_w - crop_w) // 2
+    top = (src_h - crop_h) // 2
+    zoomed = img.crop((left, top, left + crop_w, top + crop_h))
+    end = _crop_center(zoomed, WIDTH, HEIGHT)
+    _save_pair("forest_zoom", start, end)
 
 
-def generate_identity() -> None:
-    """Same checkerboard image duplicated — should produce near-static video."""
-    img = Image.new("RGB", (WIDTH, HEIGHT))
-    draw = ImageDraw.Draw(img)
-    cell_w = WIDTH // 8
-    cell_h = HEIGHT // 8
-    for row in range(8):
-        for col in range(8):
-            color = (255, 255, 255) if (row + col) % 2 == 0 else (0, 0, 0)
-            x0 = col * cell_w
-            y0 = row * cell_h
-            draw.rectangle([x0, y0, x0 + cell_w - 1, y0 + cell_h - 1], fill=color)
-    _save_pair("identity", img.copy(), img.copy())
+def generate_day_to_night() -> None:
+    """Cat in forest: bright daylight -> dark blue-shifted (simulates day-to-dusk)."""
+    img = Image.open(SOURCE_DIR / "test_i2v.png")
+    base = _crop_center(img, WIDTH, HEIGHT)
+    # Start: bright, warm
+    start = ImageEnhance.Brightness(base).enhance(1.15)
+    start = ImageEnhance.Color(start).enhance(1.2)
+    # End: dark, blue-shifted
+    dark = ImageEnhance.Brightness(base).enhance(0.35)
+    arr = np.array(dark, dtype=np.float32)
+    arr[:, :, 2] = np.clip(arr[:, :, 2] * 1.6, 0, 255)  # boost blue
+    arr[:, :, 0] = arr[:, :, 0] * 0.7  # reduce red
+    arr[:, :, 1] = arr[:, :, 1] * 0.8  # reduce green
+    end = Image.fromarray(arr.astype(np.uint8))
+    _save_pair("day_to_night", start, end)
 
 
-def generate_text_overlay() -> None:
-    """White background with large black text 'START' -> 'END'."""
-    for label, suffix in [("START", "start"), ("END", "end")]:
-        img = Image.new("RGB", (WIDTH, HEIGHT), (255, 255, 255))
-        draw = ImageDraw.Draw(img)
-        # Try to use a large font; fall back to default if unavailable
-        try:
-            font = ImageFont.truetype("/System/Library/Fonts/Helvetica.ttc", 120)
-        except OSError:
-            try:
-                font = ImageFont.truetype("DejaVuSans.ttf", 120)
-            except OSError:
-                font = ImageFont.load_default()
-        bbox = draw.textbbox((0, 0), label, font=font)
-        text_w = bbox[2] - bbox[0]
-        text_h = bbox[3] - bbox[1]
-        x = (WIDTH - text_w) // 2
-        y = (HEIGHT - text_h) // 2
-        draw.text((x, y), label, fill=(0, 0, 0), font=font)
-        img.save(FIXTURES_DIR / f"text_overlay_{suffix}.png")
-    print(f"  text_overlay: {FIXTURES_DIR / 'text_overlay'}_start.png, {FIXTURES_DIR / 'text_overlay'}_end.png")
+def generate_hedgehog_seasons() -> None:
+    """Hedgehog start: warm autumn tones -> hedgehog end: cool winter tones."""
+    start_src = Image.open(SOURCE_DIR / "keyframe_start.png")
+    end_src = Image.open(SOURCE_DIR / "keyframe_end.png")
+    start_base = _crop_center(start_src, WIDTH, HEIGHT)
+    end_base = _crop_center(end_src, WIDTH, HEIGHT)
+    # Start: warm autumn (boost red/yellow, increase saturation)
+    arr_s = np.array(start_base, dtype=np.float32)
+    arr_s[:, :, 0] = np.clip(arr_s[:, :, 0] * 1.15, 0, 255)
+    arr_s[:, :, 2] = arr_s[:, :, 2] * 0.85
+    start = ImageEnhance.Color(Image.fromarray(arr_s.astype(np.uint8))).enhance(1.3)
+    # End: cool winter (boost blue, desaturate, brighten slightly)
+    arr_e = np.array(end_base, dtype=np.float32)
+    arr_e[:, :, 2] = np.clip(arr_e[:, :, 2] * 1.3, 0, 255)
+    arr_e[:, :, 0] = arr_e[:, :, 0] * 0.9
+    end = ImageEnhance.Color(Image.fromarray(arr_e.astype(np.uint8))).enhance(0.7)
+    end = ImageEnhance.Brightness(end).enhance(1.1)
+    _save_pair("hedgehog_seasons", start, end)
 
 
-def generate_geometric() -> None:
-    """8x8 checkerboard -> diagonal stripes."""
-    # Checkerboard
-    start = Image.new("RGB", (WIDTH, HEIGHT))
-    draw_start = ImageDraw.Draw(start)
-    cell_w = WIDTH // 8
-    cell_h = HEIGHT // 8
-    for row in range(8):
-        for col in range(8):
-            color = (255, 255, 255) if (row + col) % 2 == 0 else (0, 0, 0)
-            x0 = col * cell_w
-            y0 = row * cell_h
-            draw_start.rectangle([x0, y0, x0 + cell_w - 1, y0 + cell_h - 1], fill=color)
-
-    # Diagonal stripes
-    end = Image.new("RGB", (WIDTH, HEIGHT))
-    stripe_width = 40
-    for y in range(HEIGHT):
-        for x in range(WIDTH):
-            val = 255 if ((x + y) // stripe_width) % 2 == 0 else 0
-            end.putpixel((x, y), (val, val, val))
-
-    _save_pair("geometric", start, end)
+def generate_forest_blur() -> None:
+    """Cat in forest: sharp focus -> soft bokeh blur (simulates focus pull)."""
+    img = Image.open(SOURCE_DIR / "test_i2v.png")
+    base = _crop_center(img, WIDTH, HEIGHT)
+    start = ImageEnhance.Sharpness(base).enhance(1.5)
+    end = base.filter(ImageFilter.GaussianBlur(radius=8))
+    _save_pair("forest_blur", start, end)
 
 
 GENERATORS = [
-    generate_solid_colors,
-    generate_gradient,
-    generate_identity,
-    generate_text_overlay,
-    generate_geometric,
+    generate_hedgehog,
+    generate_forest_zoom,
+    generate_day_to_night,
+    generate_hedgehog_seasons,
+    generate_forest_blur,
 ]
 
 
