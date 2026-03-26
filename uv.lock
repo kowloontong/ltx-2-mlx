@@ -399,6 +399,7 @@ version = "0.1.0"
 source = { editable = "packages/ltx-trainer" }
 dependencies = [
     { name = "ltx-core-mlx" },
+    { name = "ltx-pipelines-mlx" },
     { name = "mlx" },
     { name = "numpy" },
     { name = "pydantic" },
@@ -423,6 +424,7 @@ wandb = [
 requires-dist = [
     { name = "huggingface-hub", marker = "extra == 'hub'", specifier = ">=0.26.0" },
     { name = "ltx-core-mlx", editable = "packages/ltx-core-mlx" },
+    { name = "ltx-pipelines-mlx", editable = "packages/ltx-pipelines-mlx" },
     { name = "ltx-trainer-mlx", extras = ["wandb", "hub"], marker = "extra == 'all'", editable = "packages/ltx-trainer" },
     { name = "mlx", specifier = ">=0.31.0" },
     { name = "numpy", specifier = ">=1.26.0" },

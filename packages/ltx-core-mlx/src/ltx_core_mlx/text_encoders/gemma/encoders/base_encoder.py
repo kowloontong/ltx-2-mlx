@@ -45,10 +45,6 @@ class GemmaLanguageModel(nn.Module):
 
         self._model, self._tokenizer = mlx_lm_load(path)
 
-    @property
-    def is_loaded(self) -> bool:
-        return self._model is not None
-
     def tokenize(self, text: str, max_length: int = 1024) -> tuple[mx.array, mx.array]:
         """Tokenize a text string with left-padding to max_length.
 
@@ -159,18 +155,6 @@ class GemmaLanguageModel(nn.Module):
                 mx.eval(h)
 
         return all_hidden_states
-
-    def get_hidden_states(self, token_ids: mx.array) -> mx.array:
-        """Extract final hidden states from the language model.
-
-        Args:
-            token_ids: (B, seq_len) token IDs.
-
-        Returns:
-            Hidden states of shape (B, seq_len, hidden_dim) from the last layer.
-        """
-        all_states = self.get_all_hidden_states(token_ids)
-        return all_states[-1]
 
     def encode(self, text: str, max_length: int = 1024) -> mx.array:
         """Tokenize and extract final hidden states in one call.

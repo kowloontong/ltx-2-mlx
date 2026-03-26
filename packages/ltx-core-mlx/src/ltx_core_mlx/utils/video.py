@@ -10,7 +10,7 @@ import numpy as np
 from ltx_core_mlx.utils.ffmpeg import find_ffmpeg
 
 
-def load_video_frames(
+def load_video_frames_normalized(
     path: str,
     height: int,
     width: int,
@@ -21,6 +21,8 @@ def load_video_frames(
 
     Decodes the video, rescales to (height, width), and returns normalised
     frames in [0, 1] as a (1, 3, F, H, W) bfloat16 tensor.
+
+    For VAE encoding ([-1, 1] range), use :func:`load_video_for_encoding` instead.
 
     Args:
         path: Path to the video file.
@@ -100,5 +102,5 @@ def load_video_for_encoding(
     Returns:
         mx.array of shape (1, 3, F, H, W) in [-1, 1] range, bfloat16.
     """
-    frames = load_video_frames(path, height, width, max_frames)
+    frames = load_video_frames_normalized(path, height, width, max_frames)
     return (frames * 2.0 - 1.0).astype(mx.bfloat16)

@@ -45,7 +45,7 @@ from ltx_core_mlx.model.video_vae.video_vae import VideoEncoder
 from ltx_core_mlx.utils.image import prepare_image_for_encoding
 from ltx_core_mlx.utils.memory import aggressive_cleanup
 from ltx_core_mlx.utils.positions import compute_audio_positions, compute_audio_token_count, compute_video_positions
-from ltx_core_mlx.utils.video import load_video_frames
+from ltx_core_mlx.utils.video import load_video_frames_normalized
 from ltx_core_mlx.utils.weights import apply_quantization, load_split_safetensors
 from ltx_pipelines_mlx.scheduler import DISTILLED_SIGMAS, STAGE_2_SIGMAS
 from ltx_pipelines_mlx.ti2vid_one_stage import TextToVideoPipeline
@@ -314,7 +314,7 @@ class ICLoraPipeline(TextToVideoPipeline):
 
         for video_path, strength in video_conditioning:
             # Load video at scaled-down resolution (if scale > 1)
-            video = load_video_frames(video_path, ref_height, ref_width, num_frames)
+            video = load_video_frames_normalized(video_path, ref_height, ref_width, num_frames)
             # Normalize to [-1, 1] for VAE encoding
             video = (video * 2.0 - 1.0).astype(mx.bfloat16)
             encoded_video = self.vae_encoder.encode(video)
@@ -793,8 +793,8 @@ def _load_mask_video(
     Returns:
         Tensor of shape (1, 1, F, H, W) with values in [0, 1].
     """
-    # load_video_frames returns (1, 3, F, H, W) in [0, 1]
-    mask_video = load_video_frames(mask_path, height, width, num_frames)
+    # load_video_frames_normalized returns (1, 3, F, H, W) in [0, 1]
+    mask_video = load_video_frames_normalized(mask_path, height, width, num_frames)
     # Take mean over channels for grayscale: (1, 3, F, H, W) -> (1, 1, F, H, W)
     mask = mask_video.mean(axis=1, keepdims=True)
     return mx.clip(mask, 0.0, 1.0)

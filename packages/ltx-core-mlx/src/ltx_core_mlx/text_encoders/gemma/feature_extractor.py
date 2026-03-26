@@ -19,7 +19,6 @@ import mlx.core as mx
 import mlx.nn as nn
 
 from ltx_core_mlx.text_encoders.gemma.embeddings_connector import Embeddings1DConnector
-from ltx_core_mlx.text_encoders.gemma.encoders.base_encoder import GemmaLanguageModel
 
 
 class TextEmbeddingProjection(nn.Module):
@@ -264,33 +263,6 @@ class GemmaFeaturesExtractorV2(nn.Module):
 
         # Project and refine through connectors
         return self.connector(stacked, attention_mask=attention_mask)
-
-    @staticmethod
-    def from_language_model(
-        language_model: GemmaLanguageModel,
-        video_dim: int = 4096,
-        audio_dim: int = 2048,
-        num_registers: int = 128,
-    ) -> tuple[GemmaLanguageModel, GemmaFeaturesExtractorV2]:
-        """Create a feature extractor paired with a language model.
-
-        Args:
-            language_model: Pre-loaded Gemma model.
-            video_dim: Target video dimension.
-            audio_dim: Target audio dimension.
-            num_registers: Number of registers.
-
-        Returns:
-            Tuple of (language_model, feature_extractor).
-        """
-        extractor = GemmaFeaturesExtractorV2(
-            caption_channels=3840,
-            num_gemma_layers=49,
-            video_dim=video_dim,
-            audio_dim=audio_dim,
-            num_registers=num_registers,
-        )
-        return language_model, extractor
 
 
 def _per_token_rms_norm(x: mx.array, eps: float = 1e-6) -> mx.array:

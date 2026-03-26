@@ -111,29 +111,3 @@ def probe_video_info(video_path: str) -> VideoInfo:
         duration=duration,
         has_audio=audio_found,
     )
-
-
-def has_audio_stream(video_path: str) -> bool:
-    """Check if a video file contains an audio stream.
-
-    Args:
-        video_path: Path to the video file.
-
-    Returns:
-        True if the video has at least one audio stream.
-    """
-    ffprobe = find_ffprobe()
-    cmd = [
-        ffprobe,
-        "-v",
-        "quiet",
-        "-select_streams",
-        "a",
-        "-show_entries",
-        "stream=codec_type",
-        "-of",
-        "csv=p=0",
-        video_path,
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
-    return bool(result.stdout.strip())

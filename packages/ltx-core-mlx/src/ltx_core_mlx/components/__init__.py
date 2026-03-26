@@ -5,7 +5,6 @@ from ltx_core_mlx.components.guiders import (
     MultiModalGuiderFactory,
     MultiModalGuiderParams,
     create_multimodal_guider_factory,
-    projection_coef,
 )
 from ltx_core_mlx.components.patchifiers import (
     AudioPatchifier,
@@ -21,5 +20,4 @@ __all__ = [
     "VideoLatentPatchifier",
     "compute_video_latent_shape",
     "create_multimodal_guider_factory",
-    "projection_coef",
 ]

@@ -5,7 +5,6 @@ Ported from ltx-pipelines/src/ltx_pipelines/ti2vid_one_stage.py
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 import mlx.core as mx
@@ -30,14 +29,6 @@ from ltx_core_mlx.utils.positions import compute_audio_positions, compute_audio_
 from ltx_core_mlx.utils.weights import apply_quantization, load_split_safetensors, remap_audio_vae_keys
 from ltx_pipelines_mlx.scheduler import DISTILLED_SIGMAS
 from ltx_pipelines_mlx.utils.samplers import denoise_loop
-
-
-@dataclass
-class GenerationOutput:
-    """Output of a generation pipeline."""
-
-    video_path: str | None = None
-    audio_path: str | None = None
 
 
 class TextToVideoPipeline:
