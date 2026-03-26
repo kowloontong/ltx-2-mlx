@@ -68,10 +68,27 @@ examples:
     gen = sub.add_parser("generate", help="Generate video from text (T2V) or image (I2V)")
     _add_common_args(gen)
     gen.add_argument("--image", "-i", default=None, help="Reference image for I2V (optional)")
-    gen.add_argument("--two-stage", action="store_true", help="Two-stage pipeline (half-res + upscale + refine)")
-    gen.add_argument("--hq", action="store_true", help="HQ pipeline (res_2s sampler + upscale + refine)")
-    gen.add_argument("--stage1-steps", type=int, default=None, help="Stage 1 steps for two-stage/HQ mode")
-    gen.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 steps for two-stage/HQ mode")
+    gen.add_argument(
+        "--two-stage",
+        action="store_true",
+        help="Two-stage pipeline: dev model + CFG at half-res, upscale, distilled LoRA refine (requires q8 model)",
+    )
+    gen.add_argument("--hq", action="store_true", help="HQ two-stage pipeline (res_2s sampler for stage 1)")
+    gen.add_argument("--stage1-steps", type=int, default=20, help="Stage 1 denoising steps (default: 20)")
+    gen.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 denoising steps (default: 3)")
+    gen.add_argument("--cfg-scale", type=float, default=3.0, help="CFG guidance scale for stage 1 (default: 3.0)")
+    gen.add_argument("--stg-scale", type=float, default=0.0, help="STG guidance scale for stage 1 (default: 0.0)")
+    gen.add_argument(
+        "--dev-transformer",
+        default="transformer-dev.safetensors",
+        help="Dev transformer filename (default: transformer-dev.safetensors)",
+    )
+    gen.add_argument(
+        "--distilled-lora",
+        default="ltx-2.3-22b-distilled-lora-384.safetensors",
+        help="Distilled LoRA filename for stage 2 (default: ltx-2.3-22b-distilled-lora-384.safetensors)",
+    )
+    gen.add_argument("--lora-strength", type=float, default=1.0, help="Distilled LoRA strength (default: 1.0)")
     gen.add_argument("--enhance-prompt", action="store_true", help="Enhance prompt using Gemma before generation")
 
     # --- a2v (Audio-to-Video) ---
@@ -200,32 +217,32 @@ def _cmd_generate(args: argparse.Namespace) -> None:
 
     prompt = _maybe_enhance_prompt(args)
 
-    if args.hq:
-        from ltx_pipelines_mlx.ti2vid_two_stages_hq import TwoStageHQPipeline
+    if args.hq or args.two_stage:
+        # Two-stage requires the q8 model (dev + distilled LoRA)
+        if args.model == DEFAULT_MODEL:
+            args.model = "dgrauet/ltx-2.3-mlx-q8"
+
+        if args.hq:
+            from ltx_pipelines_mlx.ti2vid_two_stages_hq import TwoStageHQPipeline as PipeClass
+
+            mode_name = "HQ Two-Stage (res_2s + CFG + distilled LoRA)"
+        else:
+            from ltx_pipelines_mlx.ti2vid_two_stages import TwoStagePipeline as PipeClass
+
+            mode_name = "Two-Stage (Euler + CFG + distilled LoRA)"
 
         if not args.quiet:
-            print("Mode: HQ Two-Stage (res_2s)")
+            print(f"Mode: {mode_name}")
+            print(f"  Model: {args.model}")
+            print(f"  CFG scale: {args.cfg_scale}")
 
-        pipe = TwoStageHQPipeline(model_dir=args.model, low_memory=True)
-        pipe.generate_and_save(
-            prompt=prompt,
-            output_path=args.output,
-            height=args.height,
-            width=args.width,
-            num_frames=args.frames,
-            seed=args.seed,
-            stage1_steps=args.stage1_steps or 20,
-            stage2_steps=args.stage2_steps,
-            image=args.image,
+        pipe = PipeClass(
+            model_dir=args.model,
+            low_memory=True,
+            dev_transformer=args.dev_transformer,
+            distilled_lora=args.distilled_lora,
+            distilled_lora_strength=args.lora_strength,
         )
-
-    elif args.two_stage:
-        from ltx_pipelines_mlx.ti2vid_two_stages import TwoStagePipeline
-
-        if not args.quiet:
-            print("Mode: Two-Stage")
-
-        pipe = TwoStagePipeline(model_dir=args.model, low_memory=True)
         pipe.generate_and_save(
             prompt=prompt,
             output_path=args.output,
@@ -235,6 +252,9 @@ def _cmd_generate(args: argparse.Namespace) -> None:
             seed=args.seed,
             stage1_steps=args.stage1_steps,
             stage2_steps=args.stage2_steps,
+            cfg_scale=args.cfg_scale,
+            stg_scale=args.stg_scale,
+            image=args.image,
         )
 
     elif args.image:
