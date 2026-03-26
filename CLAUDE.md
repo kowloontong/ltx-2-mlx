@@ -179,6 +179,7 @@ Weights are pre-converted by [mlx-forge](https://github.com/dgrauet/mlx-forge) a
 | Distilled bf16 | [dgrauet/ltx-2.3-mlx-distilled](https://huggingface.co/dgrauet/ltx-2.3-mlx-distilled) | ~42GB | Full precision, requires 64GB+ RAM |
 | Distilled int8 | [dgrauet/ltx-2.3-mlx-distilled-q8](https://huggingface.co/dgrauet/ltx-2.3-mlx-distilled-q8) | ~21GB | Recommended for 32GB+ |
 | Distilled int4 | [dgrauet/ltx-2.3-mlx-distilled-q4](https://huggingface.co/dgrauet/ltx-2.3-mlx-distilled-q4) | ~12GB | Lower quality, fits 16GB |
+| Dev + distilled q8 | [dgrauet/ltx-2.3-mlx-q8](https://huggingface.co/dgrauet/ltx-2.3-mlx-q8) | ~26GB | Dev transformer + distilled LoRA for keyframe |
 
 ### MLX Layout Conventions
 
@@ -316,6 +317,66 @@ Audio latent (B, 8, T, 16)
 - **BWE resampler**: Hann-windowed sinc, 43 taps, rolloff=0.99 (NOT Kaiser)
 - **BWE MelSTFT**: causal left-only padding (352, 0), NOT symmetric
 - **BWE generator**: `apply_final_activation=False` (no tanh on residual)
+
+---
+
+## CLI Commands
+
+Entry point: `uv run ltx-2-mlx <command>`. Available commands:
+
+| Command | Pipeline | Description |
+|---------|----------|-------------|
+| `generate` | T2V / I2V | One-stage or two-stage generation (auto-selects based on `--image`) |
+| `keyframe` | Keyframe interpolation | Two-stage interpolation between start/end frames |
+| `retake` | Retake | Regenerate a time segment of an existing video |
+| `extend` | Extend | Add frames before or after an existing video |
+| `a2v` | Audio-to-video | Two-stage audio-conditioned generation |
+| `enhance` | Prompt enhancement | Enhance a text prompt using Gemma (no video generation) |
+| `info` | Model info | Show model configuration and memory estimates |
+
+Common flags: `--model`, `--prompt`, `--output`, `--height`, `--width`, `--frames`, `--seed`, `--steps`, `--cfg-scale`, `--stg-scale`, `--enhance-prompt`.
+
+---
+
+## Guidance System (STG / CFG / Modality)
+
+The non-distilled (dev) model uses multi-modal guidance with up to 4 forward passes per step:
+
+| Pass | Purpose | Controlled By |
+|------|---------|--------------|
+| Conditioned | Normal generation | Always runs |
+| Unconditional | CFG (classifier-free guidance) | `cfg_scale != 1.0` |
+| Perturbed | STG (spatio-temporal guidance) | `stg_scale != 0.0` |
+| Modality-isolated | Cross-modal guidance | `modality_scale != 1.0` |
+
+Default reference params for keyframe: `cfg_scale=3.0`, `stg_scale=1.0`, `stg_blocks=[28]`, `rescale_scale=0.7`, `modality_scale=3.0`.
+
+**Memory impact**: Each extra pass doubles/triples/quadruples memory. On 32GB Mac with dev model at 480x704: CFG-only supports 33 frames, full guidance (4 passes) supports ~17 frames.
+
+**STG perturbation masks**: Self-attention masks are 4D `(B,1,1,1)` for use inside attention where tensors are `(B,H,N,D)`. Cross-modal masks (A2V/V2A) are 3D `(B,1,1)` for use outside attention where outputs are `(B,N,dim)`. Mixing these up causes silent shape corruption via broadcasting.
+
+---
+
+## Keyframe Interpolation Pipeline
+
+Two-stage pipeline requiring the dev (non-distilled) model + CFG. The distilled model hallucinates during interpolation.
+
+### Stage 1: Half Resolution + CFG
+1. Compute half-res latent dims: `H_half = (height//2) // 32`, `W_half = (width//2) // 32`
+2. Encode keyframes at VAE-compatible resolution: `H_half * 32` x `W_half * 32`
+3. Create empty LatentState → apply `VideoConditionByKeyframeIndex` → noise (order matters!)
+4. Denoise with dev model + CFG (20 steps, dynamic schedule)
+
+### Stage 2: Upscale + Refine
+1. Denormalize latent → neural upsampler (2x spatial) → re-normalize (using VAE encoder stats)
+2. Fuse distilled LoRA into dev model
+3. Re-encode keyframes at upscaled resolution, apply conditioning
+4. Denoise with distilled schedule (3 steps)
+
+### Key Files
+- `keyframe_interpolation.py` — `KeyframeInterpolationPipeline` (extends `TwoStagePipeline`)
+- `conditioning/types/keyframe_cond.py` — `VideoConditionByKeyframeIndex` (appends tokens, builds attention mask)
+- `model/upsampler/model.py` — `LatentUpsampler` (Conv3d + PixelShuffle2D)
 
 ---
 

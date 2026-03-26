@@ -1,68 +1,59 @@
-# Keyframe Interpolation Divergence Test Matrix
+# Keyframe Interpolation — Bug Tracker
 
-_Generated: 2026-03-25 21:09 UTC_
+_Last updated: 2026-03-26_
 
-## Overview
+## Status: All Known Bugs Fixed
 
-3 known divergences between MLX and PyTorch reference keyframe interpolation:
+Five bugs were found and resolved in the keyframe interpolation pipeline.
+The pipeline now works with dev model + CFG + STG + modality guidance.
 
-| # | Divergence | MLX Behavior | Reference Behavior | Impact |
-|---|-----------|-------------|-------------------|--------|
-| 1 | Upsampler norm wrapping | Disabled (causes grid artifacts) | Enabled | Visual grid pattern |
-| 2 | CFG guidance | Disabled (no negative prompt support) | Enabled (scale 3.0) | Over-saturation, text overlays |
-| 3 | Output resolution | 480x640 (default) | 448x704 | Possible plaid/garden artifacts |
+## Bugs Fixed
 
-## Test Configurations
+| # | Bug | Commit | Description |
+|---|-----|--------|-------------|
+| 1 | Conditioning after noising | 9c089ff | Pipeline created noise then appended keyframes. Fix: empty state -> conditioning -> noise. |
+| 2 | GroupNorm pytorch_compatible | 133e1c1, ca784dd | MLX GroupNorm didn't normalize over spatial dims. Fix: `pytorch_compatible=True`. |
+| 3 | Guider params not propagated | 899ae78, ecd8910, 668d4b0 | CLI built full MultiModalGuiderParams but generate_and_save dropped them. |
+| 4 | Resolution rounding | 6e71b71 | Half-res rounded to 64-multiples (352->320). Fix: use integer division by 32. Output 448x704. |
+| 5 | STG cross-attention mask shape | 591a3d8 | A2V/V2A masks 4D (B,1,1,1) on 3D output (B,N,dim) -> broadcasting corruption. Fix: pass 3D tensor to mask_like. |
 
-| Config | Description | Extra Args |
-|--------|-------------|------------|
-| A | Baseline — current working state | (none) |
-| B | CFG guidance enabled | `--cfg-scale 3.0` |
-| C | Reference resolution | `--height 448 --width 704` |
-| D | CFG + reference resolution | `--cfg-scale 3.0 --height 448 --width 704` |
+## Test Matrix
 
-## Results Table
+Pipeline: dev model (q8) + CFG (scale 3.0) + distilled LoRA, seed 712577398, 33 frames.
 
-| Fixture | Config C |
-|---------|---------|
-| text_overlay | OK 318s |
+| Fixture | Resolution | Status |
+|---------|-----------|--------|
+| hedgehog | 704x448 | OK |
+| forest_zoom | 704x448 | OK |
+| day_to_night | 704x448 | OK |
+| hedgehog_seasons | 704x448 | OK |
+| forest_blur | 704x448 | OK |
 
-## Expected Artifacts by Configuration
+## Memory Limits (32GB Mac)
 
-- **Config A (baseline)**: None expected — current working state
-- **Config B (cfg)**: Possible text overlays, over-saturation from classifier-free guidance
-- **Config C (resolution)**: Possible plaid/garden artifacts from non-standard resolution
-- **Config D (cfg+resolution)**: Combined B+C artifacts
-
-## Notes for Manual Visual Inspection
-
-- [ ] Check Config A videos for baseline quality (smooth transitions, no artifacts)
-- [ ] Compare Config B vs A: look for text hallucinations, color over-saturation
-- [ ] Compare Config C vs A: look for grid/plaid patterns, spatial artifacts
-- [ ] Compare Config D vs A: check if B+C artifacts compound or cancel
-- [ ] Identity fixture: all configs should produce near-static video
-- [ ] Solid colors fixture: interpolation should be smooth gradient between red and blue
-
-## Fixture Descriptions
-
-| Fixture | Description |
-|---------|-------------|
-| text_overlay | White + 'START' text -> White + 'END' text (tests text coherence) |
+| Guidance Mode | Passes/Step | Max Frames (480x704) |
+|--------------|-------------|---------------------|
+| CFG only | 2 | 33 |
+| CFG + STG + modality | 4 | 17 |
 
 ## Reproduction
 
 ```bash
-# Generate fixtures
+# Generate fixtures from source photos
 uv run python scripts/keyframe_tests/generate_fixtures.py
 
 # Run full matrix
 uv run python scripts/keyframe_tests/run_matrix.py
 
-# Run specific configs/pairs
-uv run python scripts/keyframe_tests/run_matrix.py --config A,B --pairs existing,solid_colors
+# Run specific pairs
+uv run python scripts/keyframe_tests/run_matrix.py --pairs hedgehog,forest_zoom
 
-# Dry run (print commands only)
-uv run python scripts/keyframe_tests/run_matrix.py --dry-run
+# Single run
+uv run ltx-2-mlx keyframe \
+    --model dgrauet/ltx-2.3-mlx-q8 \
+    --prompt "description" \
+    --start start.png --end end.png -o out.mp4 \
+    --dev-transformer transformer-dev.safetensors \
+    --distilled-lora ltx-2.3-22b-distilled-lora-384.safetensors \
+    --cfg-scale 3.0 --seed 712577398 --frames 33
 ```
-
-All tests use seed **712577398**, 97 frames, 8 steps.

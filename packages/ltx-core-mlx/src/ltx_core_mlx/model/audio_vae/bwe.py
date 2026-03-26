@@ -21,7 +21,7 @@ import numpy as np
 from ltx_core_mlx.model.audio_vae.vocoder import BigVGANVocoder
 
 # ---------------------------------------------------------------------------
-# Kaiser-sinc resampler (no learned weights)
+# Hann-sinc resampler (no learned weights)
 # ---------------------------------------------------------------------------
 
 
