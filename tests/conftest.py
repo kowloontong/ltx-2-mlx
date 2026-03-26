@@ -13,8 +13,11 @@ def find_q8_model_dir() -> Path | None:
     snapshots = sorted(_Q8_MODEL.iterdir())
     if not snapshots:
         return None
-    # Return last snapshot (latest)
-    return snapshots[-1]
+    model_dir = snapshots[-1]
+    # Verify the transformer weights actually exist
+    if not (model_dir / "transformer-distilled.safetensors").exists():
+        return None
+    return model_dir
 
 
 MODEL_DIR = find_q8_model_dir()

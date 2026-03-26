@@ -24,7 +24,7 @@ class TestWeightLoading:
         """Verify transformer.safetensors loads and has expected key patterns."""
         from ltx_core_mlx.utils.weights import load_split_safetensors
 
-        weights = load_split_safetensors(MODEL_DIR / "transformer.safetensors", prefix="transformer.")
+        weights = load_split_safetensors(MODEL_DIR / "transformer-distilled.safetensors", prefix="transformer.")
         assert len(weights) > 0, "No weights loaded"
 
         # Check for expected key patterns
@@ -81,7 +81,7 @@ class TestWeightLoading:
         """Verify transformer weight shapes match our model architecture."""
         from ltx_core_mlx.utils.weights import load_split_safetensors
 
-        weights = load_split_safetensors(MODEL_DIR / "transformer.safetensors", prefix="transformer.")
+        weights = load_split_safetensors(MODEL_DIR / "transformer-distilled.safetensors", prefix="transformer.")
 
         # Check block 0 has expected keys
         block0_keys = sorted(k for k in weights if k.startswith("transformer_blocks.0."))
@@ -144,7 +144,7 @@ class TestWeightLoading:
         config = LTXModelConfig()
         model = LTXModel(config)
 
-        weights = load_split_safetensors(MODEL_DIR / "transformer.safetensors", prefix="transformer.")
+        weights = load_split_safetensors(MODEL_DIR / "transformer-distilled.safetensors", prefix="transformer.")
 
         # Apply quantization to convert Linear -> QuantizedLinear where weights
         # have scales/biases (int8 quantized layers).

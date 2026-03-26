@@ -55,7 +55,7 @@ class TestFullGeneration:
         print("\n[1/5] Loading transformer (q8)...")
         config = LTXModelConfig()
         dit = LTXModel(config)
-        t_weights = load_split_safetensors(MODEL_DIR / "transformer.safetensors", prefix="transformer.")
+        t_weights = load_split_safetensors(MODEL_DIR / "transformer-distilled.safetensors", prefix="transformer.")
         apply_quantization(dit, t_weights)
         dit.load_weights(list(t_weights.items()), strict=True)
         del t_weights

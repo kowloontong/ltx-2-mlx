@@ -115,7 +115,7 @@ class TestTransformerForwardPass:
         config = LTXModelConfig()
         model = LTXModel(config)
 
-        weights = load_split_safetensors(MODEL_DIR / "transformer.safetensors", prefix="transformer.")
+        weights = load_split_safetensors(MODEL_DIR / "transformer-distilled.safetensors", prefix="transformer.")
         apply_quantization(model, weights)
         model.load_weights(list(weights.items()), strict=True)
         mx.synchronize()
