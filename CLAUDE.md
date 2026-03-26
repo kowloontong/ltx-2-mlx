@@ -5,7 +5,7 @@
 Pure MLX port of [LTX-2](https://github.com/Lightricks/LTX-2/) (Lightricks) for Apple Silicon. Three-package monorepo mirroring the reference structure:
 
 - **ltx-core-mlx** (`ltx_core_mlx`) — model library: DiT, VAE, audio, text encoder, conditioning
-- **ltx-pipelines-mlx** (`ltx_pipelines_mlx`) — generation pipelines: T2V, I2V, retake, extend, keyframe, two-stage
+- **ltx-pipelines-mlx** (`ltx_pipelines_mlx`) — generation pipelines: T2V, I2V, retake, extend, keyframe, IC-LoRA, two-stage
 - **ltx-trainer** (`ltx_trainer_mlx`) - ltx-2 training, democratized.
 
 Loads pre-converted MLX weights from the [LTX-2.3 MLX collection on HuggingFace](https://huggingface.co/collections/dgrauet/ltx-23). Weight conversion is handled by [mlx-forge](https://github.com/dgrauet/mlx-forge).
@@ -351,6 +351,7 @@ Entry point: `uv run ltx-2-mlx <command>`. Available commands:
 |---------|----------|-------------|
 | `generate` | T2V / I2V | One-stage or two-stage generation (auto-selects based on `--image`) |
 | `keyframe` | Keyframe interpolation | Two-stage interpolation between start/end frames |
+| `ic-lora` | IC-LoRA | Two-stage generation with control video conditioning (depth, canny, pose, motion tracks) |
 | `retake` | Retake | Regenerate a time segment of an existing video |
 | `extend` | Extend | Add frames before or after an existing video |
 | `a2v` | Audio-to-video | Two-stage audio-conditioned generation |
@@ -358,6 +359,26 @@ Entry point: `uv run ltx-2-mlx <command>`. Available commands:
 | `info` | Model info | Show model configuration and memory estimates |
 
 Common flags: `--model`, `--prompt`, `--output`, `--height`, `--width`, `--frames`, `--seed`, `--steps`, `--cfg-scale`, `--stg-scale`, `--enhance-prompt`.
+
+### IC-LoRA Example
+
+```bash
+# Union Control (depth, canny, pose)
+ltx-2-mlx ic-lora \
+  --prompt "a person walking" \
+  --lora Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control 1.0 \
+  --video-conditioning depth_map.mp4 1.0 \
+  -o output.mp4
+
+# Motion Track Control
+ltx-2-mlx ic-lora \
+  --prompt "particles moving" \
+  --lora Lightricks/LTX-2.3-22b-IC-LoRA-Motion-Track-Control 1.0 \
+  --video-conditioning tracks.mp4 1.0 \
+  -o output.mp4
+```
+
+Flags: `--lora PATH STRENGTH` (repeatable, supports HF repo IDs), `--video-conditioning PATH STRENGTH` (repeatable), `--conditioning-strength`, `--skip-stage-2`, `--image`.
 
 ---
 
@@ -400,6 +421,47 @@ Two-stage pipeline requiring the dev (non-distilled) model + CFG. The distilled 
 - `keyframe_interpolation.py` — `KeyframeInterpolationPipeline` (extends `TwoStagePipeline`)
 - `conditioning/types/keyframe_cond.py` — `VideoConditionByKeyframeIndex` (appends tokens, builds attention mask)
 - `model/upsampler/model.py` — `LatentUpsampler` (Conv3d + PixelShuffle2D)
+
+---
+
+## IC-LoRA Pipeline
+
+Two-stage pipeline for control-conditioned video generation using official Lightricks IC-LoRAs.
+Uses the distilled model (no CFG) with LoRA fused for Stage 1 only.
+
+### Supported IC-LoRAs
+
+| LoRA | HuggingFace | Control Types | ref_downscale |
+|------|-------------|---------------|---------------|
+| Union Control | [Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control](https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control) | Canny edges, depth maps, human pose | 2 |
+| Motion Track | [Lightricks/LTX-2.3-22b-IC-LoRA-Motion-Track-Control](https://huggingface.co/Lightricks/LTX-2.3-22b-IC-LoRA-Motion-Track-Control) | Colored spline trajectories (BGR) | 2 |
+
+### Pipeline Flow
+
+1. **LoRA resolution**: `_resolve_lora_path()` downloads from HuggingFace if needed
+2. **Metadata**: `reference_downscale_factor` read from LoRA safetensors metadata
+3. **Text encoding**: Gemma + connector, freed before loading DiT
+4. **Stage 1**: Load DiT + fuse LoRA + VAE-encode control video at ref resolution + denoise (8 steps)
+5. **Upscale**: Denormalize → neural upsampler → re-normalize (VAE encoder per-channel stats)
+6. **Stage 2**: Reload **clean** transformer (no LoRA) + denoise (3 steps, distilled sigmas)
+7. **Decode**: Free DiT, load decoders on-demand, stream video+audio
+
+### Critical Implementation Details
+
+- **Memory**: Decoders (VAE decoder, audio, vocoder) loaded on-demand in `generate_and_save()`, NOT during `generate()`. This keeps peak memory under 32GB.
+- **Stage 2 clean transformer**: After Stage 1, the LoRA-fused transformer is deleted and a fresh distilled transformer is loaded. Matches reference's separate `ModelLedger`s.
+- **Upsampler denorm/renorm**: The neural upsampler must receive denormalized latents (`vae_encoder.denormalize_latent()` before, `normalize_latent()` after). Without this, Stage 2 produces garbage.
+- **Reference resolution**: Must be 32-aligned for VAE encoder. Computed via `compute_video_latent_shape(num_frames, h // scale, w // scale)` then `* 32`.
+- **Stage 2 positions**: Derived from actual upscaled dims (`H_half * 2`, `W_half * 2`), not target `height/width` (which may round differently).
+- **Motion Track BGR**: Control videos use BGR channel order (matches IC-LoRA training format).
+- **LoRA key remapping**: Uses `LTXV_LORA_COMFY_RENAMING_MAP` (ComfyUI/diffusers → MLX keys). All 480 LoRA targets match model keys.
+
+### Key Files
+- `ic_lora.py` — `ICLoraPipeline` (extends `TextToVideoPipeline`)
+- `conditioning/types/reference_video_cond.py` — `VideoConditionByReferenceLatent`
+- `conditioning/types/attention_strength_wrapper.py` — `ConditioningItemAttentionStrengthWrapper`
+- `loader/fuse_loras.py` — LoRA weight fusion with quantization support
+- `loader/sd_ops.py` — `LTXV_LORA_COMFY_RENAMING_MAP`
 
 ---
 
