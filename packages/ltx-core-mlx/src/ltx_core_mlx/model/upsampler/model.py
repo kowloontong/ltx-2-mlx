@@ -29,13 +29,15 @@ def _pixel_shuffle_2d(x: mx.array, factor: int) -> mx.array:
 
     Matches PyTorch: rearrange(x, "b (c p1 p2) h w -> b c (h p1) (w p2)")
     MLX layout: (B, H, W, C*p1*p2) -> (B, H*p1, W*p2, C)
+
+    After mlx-forge weight conversion (OIHW -> OHWI), the Conv2d output
+    channels are reordered. In the last dim, the order is (p1, p2, C)
+    rather than PyTorch's (C, p1, p2).
     """
     B, H, W, C_total = x.shape
     C = C_total // (factor * factor)
-    # C is outermost (varies slowest), matching PyTorch (c, p1, p2) ordering
-    x = x.reshape(B, H, W, C, factor, factor)
-    # Interleave: (B, H, p1, W, p2, C)
-    x = x.transpose(0, 1, 4, 2, 5, 3)
+    x = x.reshape(B, H, W, factor, factor, C)
+    x = x.transpose(0, 1, 3, 2, 4, 5)
     x = x.reshape(B, H * factor, W * factor, C)
     return x
 
@@ -49,11 +51,14 @@ def _pixel_shuffle_3d(
 
     Matches PyTorch: rearrange(x, "b (c p1 p2 p3) d h w -> b c (d p1) (h p2) (w p3)")
     MLX layout: (B, D, H, W, C*tf*sf*sf) -> (B, D*tf, H*sf, W*sf, C)
+
+    After mlx-forge weight conversion, Conv3d output channels are in
+    (tf, sf, sf, C) order rather than PyTorch's (C, tf, sf, sf).
     """
     B, D, H, W, C_total = x.shape
     C = C_total // (spatial_factor * spatial_factor * temporal_factor)
-    x = x.reshape(B, D, H, W, C, temporal_factor, spatial_factor, spatial_factor)
-    x = x.transpose(0, 1, 5, 2, 6, 3, 7, 4)
+    x = x.reshape(B, D, H, W, temporal_factor, spatial_factor, spatial_factor, C)
+    x = x.transpose(0, 1, 4, 2, 5, 3, 6, 7)
     x = x.reshape(B, D * temporal_factor, H * spatial_factor, W * spatial_factor, C)
     return x
 
