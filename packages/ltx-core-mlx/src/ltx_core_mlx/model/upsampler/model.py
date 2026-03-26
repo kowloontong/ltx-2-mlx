@@ -117,9 +117,9 @@ class ResBlock(nn.Module):
             conv_cls = nn.Conv3d
 
         self.conv1 = conv_cls(channels, channels, kernel_size=3, padding=1)
-        self.norm1 = nn.GroupNorm(32, channels)
+        self.norm1 = nn.GroupNorm(32, channels, pytorch_compatible=True)
         self.conv2 = conv_cls(channels, channels, kernel_size=3, padding=1)
-        self.norm2 = nn.GroupNorm(32, channels)
+        self.norm2 = nn.GroupNorm(32, channels, pytorch_compatible=True)
 
     def __call__(self, x: mx.array) -> mx.array:
         residual = x
@@ -256,7 +256,7 @@ class LatentUpsampler(nn.Module):
         self.rational_resampler = rational_resampler
 
         self.initial_conv = nn.Conv3d(in_channels, mid_channels, kernel_size=3, padding=1)
-        self.initial_norm = nn.GroupNorm(32, mid_channels)
+        self.initial_norm = nn.GroupNorm(32, mid_channels, pytorch_compatible=True)
 
         self.res_blocks = [ResBlock(mid_channels, dims=3) for _ in range(num_blocks_per_stage)]
 
