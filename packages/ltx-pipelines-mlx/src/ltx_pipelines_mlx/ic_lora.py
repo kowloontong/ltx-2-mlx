@@ -482,9 +482,18 @@ class ICLoraPipeline(TextToVideoPipeline):
             return video_half, audio_latent
 
         # --- Stage 2: Upscale + refine (no IC-LoRA, clean distilled model) ---
-        # Upscale first (before reloading transformer to avoid peak memory)
+        # Upscale with denormalize/renormalize wrapping (matching reference).
+        # Reference: un_normalize -> upsampler -> normalize using VAE encoder stats.
+        # Without this, the upsampler produces garbage for Stage 2.
         assert self.upsampler is not None
-        video_upscaled = self.upsampler(video_half)
+        assert self.vae_encoder is not None
+        video_mlx = video_half.transpose(0, 2, 3, 4, 1)  # (B,C,F,H,W) -> (B,F,H,W,C)
+        video_denorm = self.vae_encoder.denormalize_latent(video_mlx)
+        video_denorm = video_denorm.transpose(0, 4, 1, 2, 3)  # back to (B,C,F,H,W)
+        video_upscaled = self.upsampler(video_denorm)
+        video_up_mlx = video_upscaled.transpose(0, 2, 3, 4, 1)  # (B,C,F,H,W) -> (B,F,H,W,C)
+        video_up_mlx = self.vae_encoder.normalize_latent(video_up_mlx)
+        video_upscaled = video_up_mlx.transpose(0, 4, 1, 2, 3)  # back to (B,C,F,H,W)
         mx.eval(video_upscaled)
 
         # Derive full-resolution latent dims from the ACTUAL upscaled shape,
