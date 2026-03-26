@@ -1,6 +1,6 @@
 # Keyframe Interpolation Divergence Test Matrix
 
-_Generated: 2026-03-25 19:16 UTC_
+_Generated: 2026-03-25 21:09 UTC_
 
 ## Overview
 
@@ -23,14 +23,9 @@ _Generated: 2026-03-25 19:16 UTC_
 
 ## Results Table
 
-| Fixture | Config A | Config B | Config C | Config D |
-|---------|---------|---------|---------|---------|
-| existing | DRY-RUN | DRY-RUN | DRY-RUN | DRY-RUN |
-| solid_colors | DRY-RUN | DRY-RUN | DRY-RUN | DRY-RUN |
-| gradient | DRY-RUN | DRY-RUN | DRY-RUN | DRY-RUN |
-| identity | DRY-RUN | DRY-RUN | DRY-RUN | DRY-RUN |
-| text_overlay | DRY-RUN | DRY-RUN | DRY-RUN | DRY-RUN |
-| geometric | DRY-RUN | DRY-RUN | DRY-RUN | DRY-RUN |
+| Fixture | Config C |
+|---------|---------|
+| text_overlay | OK 318s |
 
 ## Expected Artifacts by Configuration
 
@@ -52,12 +47,7 @@ _Generated: 2026-03-25 19:16 UTC_
 
 | Fixture | Description |
 |---------|-------------|
-| existing | Original hand-crafted test pair from tests/fixtures/ |
-| solid_colors | Solid red -> Solid blue (tests color interpolation) |
-| gradient | Horizontal gradient -> Vertical gradient (tests spatial transitions) |
-| identity | Same checkerboard duplicated (should produce near-static video) |
 | text_overlay | White + 'START' text -> White + 'END' text (tests text coherence) |
-| geometric | 8x8 checkerboard -> Diagonal stripes (tests pattern transitions) |
 
 ## Reproduction
 
