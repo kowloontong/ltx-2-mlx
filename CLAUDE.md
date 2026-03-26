@@ -179,7 +179,7 @@ Weights are pre-converted by [mlx-forge](https://github.com/dgrauet/mlx-forge) a
 | Distilled bf16 | [dgrauet/ltx-2.3-mlx-distilled](https://huggingface.co/dgrauet/ltx-2.3-mlx-distilled) | ~42GB | Full precision, requires 64GB+ RAM |
 | Distilled int8 | [dgrauet/ltx-2.3-mlx-distilled-q8](https://huggingface.co/dgrauet/ltx-2.3-mlx-distilled-q8) | ~21GB | Recommended for 32GB+ |
 | Distilled int4 | [dgrauet/ltx-2.3-mlx-distilled-q4](https://huggingface.co/dgrauet/ltx-2.3-mlx-distilled-q4) | ~12GB | Lower quality, fits 16GB |
-| Dev + distilled q8 | [dgrauet/ltx-2.3-mlx-q8](https://huggingface.co/dgrauet/ltx-2.3-mlx-q8) | ~26GB | Dev transformer + distilled LoRA for keyframe |
+| Dev + distilled q8 | [dgrauet/ltx-2.3-mlx-q8](https://huggingface.co/dgrauet/ltx-2.3-mlx-q8) | ~26GB | Dev transformer + distilled LoRA for two-stage, keyframe |
 
 ### MLX Layout Conventions
 
@@ -349,7 +349,7 @@ Entry point: `uv run ltx-2-mlx <command>`. Available commands:
 
 | Command | Pipeline | Description |
 |---------|----------|-------------|
-| `generate` | T2V / I2V | One-stage or two-stage generation (auto-selects based on `--image`) |
+| `generate` | T2V / I2V / Two-stage | One-stage, two-stage (`--two-stage` Euler, `--hq` res_2s), or I2V (`--image`) |
 | `keyframe` | Keyframe interpolation | Two-stage interpolation between start/end frames |
 | `ic-lora` | IC-LoRA | Two-stage generation with control video conditioning (depth, canny, pose, motion tracks) |
 | `retake` | Retake | Regenerate a time segment of an existing video |
@@ -379,6 +379,27 @@ ltx-2-mlx ic-lora \
 ```
 
 Flags: `--lora PATH STRENGTH` (repeatable, supports HF repo IDs), `--video-conditioning PATH STRENGTH` (repeatable), `--conditioning-strength`, `--skip-stage-2`, `--image`.
+
+### Two-Stage Example
+
+```bash
+# Two-stage with Euler sampler (auto-selects q8 model)
+ltx-2-mlx generate \
+  --prompt "a scene description" \
+  --two-stage -o output.mp4
+
+# HQ with res_2s second-order sampler (higher quality, ~2x slower)
+ltx-2-mlx generate \
+  --prompt "a scene description" \
+  --hq -o output.mp4
+
+# With I2V conditioning
+ltx-2-mlx generate \
+  --prompt "animate this" \
+  --two-stage --image photo.jpg -o output.mp4
+```
+
+Flags: `--two-stage` (Euler), `--hq` (res_2s), `--cfg-scale` (default 3.0), `--stg-scale` (default 0.0), `--stage1-steps` (default 20), `--stage2-steps` (default 3), `--image`.
 
 ---
 
@@ -421,6 +442,40 @@ Two-stage pipeline requiring the dev (non-distilled) model + CFG. The distilled 
 - `keyframe_interpolation.py` — `KeyframeInterpolationPipeline` (extends `TwoStagePipeline`)
 - `conditioning/types/keyframe_cond.py` — `VideoConditionByKeyframeIndex` (appends tokens, builds attention mask)
 - `model/upsampler/model.py` — `LatentUpsampler` (Conv3d + PixelShuffle2D)
+
+---
+
+## Two-Stage Pipeline (T2V / I2V)
+
+Two-stage pipeline for higher-resolution generation. Requires the dev model + distilled LoRA (`dgrauet/ltx-2.3-mlx-q8`).
+
+### Architecture (matching reference)
+
+- **Stage 1**: Dev model + CFG guidance at half resolution
+  - `--two-stage`: Euler sampler (`guided_denoise_loop`)
+  - `--hq`: res_2s second-order sampler (`res2s_denoise_loop` with guidance)
+  - Dynamic sigma schedule via `ltx2_schedule` (default 20 steps)
+  - Optional I2V conditioning (re-encoded at half-res)
+- **Stage 2**: Dev + distilled LoRA fused, simple Euler (no CFG)
+  - `STAGE_2_SIGMAS` (default 3 steps)
+  - I2V conditioning re-encoded at full resolution
+  - Denormalize → neural upsampler 2x → re-normalize before Stage 2
+
+### Critical Implementation Details
+
+- **Dev model required**: The distilled model produces flat/low-quality output at half resolution without CFG. Two-stage always uses the dev model.
+- **Upsampler denorm/renorm**: Same as IC-LoRA/keyframe — the neural upsampler operates in un-normalized latent space. Without denorm/renorm, Stage 2 produces grid artifacts.
+- **Stage 2 dims from upscaled shape**: `H_full = H_half * 2`, not `compute_video_latent_shape(height)`, to avoid RoPE shape mismatch.
+- **Decoders loaded on-demand**: VAE decoder + audio + vocoder loaded in `generate_and_save()` after freeing DiT, keeping peak memory under 32GB.
+- **Text encoding before DiT**: In low_memory mode, Gemma is loaded → encode prompt + negative prompt → free Gemma → load DiT. Both positive and negative embeddings must be materialized before freeing.
+- **res_2s + guidance**: `res2s_denoise_loop` accepts optional `video_guider_factory`/`audio_guider_factory` for CFG/STG/modality guidance. Each res_2s step does 2 model evaluations (substep + step), each with full guidance passes.
+- **Memory budget (32GB Mac)**: 33 frames at 480x704 with CFG-only (2 forward passes per step). STG adds a 3rd pass and may not fit.
+
+### Key Files
+- `ti2vid_two_stages.py` — `TwoStagePipeline` (Euler + CFG, extends `TextToVideoPipeline`)
+- `ti2vid_two_stages_hq.py` — `TwoStageHQPipeline` (res_2s + CFG, extends `TwoStagePipeline`)
+- `utils/samplers.py` — `res2s_denoise_loop` (with guidance support), `guided_denoise_loop`
+- `scheduler.py` — `ltx2_schedule`, `STAGE_2_SIGMAS`
 
 ---
 
