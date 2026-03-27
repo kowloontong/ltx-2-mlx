@@ -24,8 +24,8 @@ DEFAULT_MODEL = "dgrauet/ltx-2.3-mlx-q8"
 DEFAULT_GEMMA = "mlx-community/gemma-3-12b-it-4bit"
 
 
-def _add_common_args(parser: argparse.ArgumentParser) -> None:
-    """Add arguments shared across all generation subcommands."""
+def _add_base_args(parser: argparse.ArgumentParser) -> None:
+    """Add base arguments shared by all subcommands (prompt, output, model, seed)."""
     parser.add_argument("--prompt", "-p", required=True, help="Text prompt")
     parser.add_argument("--output", "-o", required=True, help="Output video path (.mp4)")
     parser.add_argument(
@@ -34,12 +34,16 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--gemma", default=DEFAULT_GEMMA, help=f"Gemma model for text encoding (default: {DEFAULT_GEMMA})"
     )
+    parser.add_argument("--seed", "-s", type=int, default=-1, help="Random seed (-1 = random)")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Suppress progress output")
+
+
+def _add_generation_args(parser: argparse.ArgumentParser) -> None:
+    """Add generation-specific arguments (dimensions, steps) on top of base args."""
+    _add_base_args(parser)
     parser.add_argument("--height", "-H", type=int, default=480, help="Video height (default: 480)")
     parser.add_argument("--width", "-W", type=int, default=704, help="Video width (default: 704)")
     parser.add_argument("--frames", "-f", type=int, default=97, help="Number of frames (default: 97)")
-    parser.add_argument("--seed", "-s", type=int, default=-1, help="Random seed (-1 = random)")
-    parser.add_argument("--steps", type=int, default=None, help="Denoising steps (default: 8)")
-    parser.add_argument("--quiet", "-q", action="store_true", help="Suppress progress output")
 
 
 def main() -> None:
@@ -66,8 +70,9 @@ examples:
 
     # --- generate (T2V / I2V / two-stage / HQ) ---
     gen = sub.add_parser("generate", help="Generate video from text (T2V) or image (I2V)")
-    _add_common_args(gen)
+    _add_generation_args(gen)
     gen.add_argument("--image", "-i", default=None, help="Reference image for I2V (optional)")
+    gen.add_argument("--steps", type=int, default=None, help="Denoising steps for one-stage (default: 8)")
     gen.add_argument(
         "--two-stage",
         action="store_true",
@@ -93,7 +98,7 @@ examples:
 
     # --- a2v (Audio-to-Video) ---
     a2v = sub.add_parser("a2v", help="Generate video from audio + text prompt")
-    _add_common_args(a2v)
+    _add_generation_args(a2v)
     a2v.add_argument("--audio", "-a", required=True, help="Input audio file (WAV/MP3/etc.)")
     a2v.add_argument("--fps", type=float, default=24.0, help="Frame rate (default: 24)")
     a2v.add_argument("--audio-start", type=float, default=0.0, help="Audio start time in seconds (default: 0)")
@@ -102,21 +107,23 @@ examples:
 
     # --- retake ---
     ret = sub.add_parser("retake", help="Regenerate a time segment of an existing video")
-    _add_common_args(ret)
+    _add_base_args(ret)
+    ret.add_argument("--steps", type=int, default=None, help="Denoising steps (default: 8)")
     ret.add_argument("--video", "-v", required=True, help="Source video file")
     ret.add_argument("--start", type=int, required=True, help="Start latent frame index (inclusive)")
     ret.add_argument("--end", type=int, required=True, help="End latent frame index (exclusive)")
 
     # --- extend ---
     ext = sub.add_parser("extend", help="Add frames before or after an existing video")
-    _add_common_args(ext)
+    _add_base_args(ext)
+    ext.add_argument("--steps", type=int, default=None, help="Denoising steps (default: 8)")
     ext.add_argument("--video", "-v", required=True, help="Source video file")
     ext.add_argument("--extend-frames", type=int, required=True, help="Number of latent frames to add")
     ext.add_argument("--direction", choices=["before", "after"], default="after", help="Direction (default: after)")
 
     # --- keyframe ---
     kf = sub.add_parser("keyframe", help="Interpolate between keyframe images")
-    _add_common_args(kf)
+    _add_generation_args(kf)
     kf.add_argument("--start", required=True, help="Start keyframe image path")
     kf.add_argument("--end", required=True, help="End keyframe image path")
     kf.add_argument("--fps", type=float, default=24.0, help="Frame rate (default: 24)")
@@ -138,7 +145,7 @@ examples:
 
     # --- ic-lora ---
     ic = sub.add_parser("ic-lora", help="Generate video with IC-LoRA control conditioning")
-    _add_common_args(ic)
+    _add_generation_args(ic)
     ic.add_argument(
         "--lora",
         action="append",
@@ -234,6 +241,7 @@ def _cmd_generate(args: argparse.Namespace) -> None:
 
         pipe = PipeClass(
             model_dir=args.model,
+            gemma_model_id=args.gemma,
             low_memory=True,
             dev_transformer=args.dev_transformer,
             distilled_lora=args.distilled_lora,
@@ -407,26 +415,25 @@ def _cmd_keyframe(args: argparse.Namespace) -> None:
         distilled_lora=args.distilled_lora,
         distilled_lora_strength=args.lora_strength,
     )
-    # Build guider params with CLI overrides (defaults match LTX_2_3_PARAMS)
-    video_gp = None
-    audio_gp = None
-    if args.cfg_scale is not None or args.stg_scale is not None:
-        from ltx_core_mlx.components.guiders import MultiModalGuiderParams
+    # Build guider params (defaults match reference LTX_2_3_PARAMS)
+    from ltx_core_mlx.components.guiders import MultiModalGuiderParams
 
-        video_gp = MultiModalGuiderParams(
-            cfg_scale=args.cfg_scale if args.cfg_scale is not None else 3.0,
-            stg_scale=args.stg_scale if args.stg_scale is not None else 1.0,
-            rescale_scale=0.7,
-            modality_scale=3.0,
-            stg_blocks=[28],
-        )
-        audio_gp = MultiModalGuiderParams(
-            cfg_scale=7.0,
-            stg_scale=args.stg_scale if args.stg_scale is not None else 1.0,
-            rescale_scale=0.7,
-            modality_scale=3.0,
-            stg_blocks=[28],
-        )
+    cfg = args.cfg_scale if args.cfg_scale is not None else 3.0
+    stg = args.stg_scale if args.stg_scale is not None else 1.0
+    video_gp = MultiModalGuiderParams(
+        cfg_scale=cfg,
+        stg_scale=stg,
+        rescale_scale=0.7,
+        modality_scale=3.0,
+        stg_blocks=[28],
+    )
+    audio_gp = MultiModalGuiderParams(
+        cfg_scale=7.0,
+        stg_scale=stg,
+        rescale_scale=0.7,
+        modality_scale=3.0,
+        stg_blocks=[28],
+    )
 
     pipe.generate_and_save(
         prompt=args.prompt,
@@ -440,6 +447,7 @@ def _cmd_keyframe(args: argparse.Namespace) -> None:
         seed=args.seed,
         stage1_steps=args.stage1_steps,
         stage2_steps=args.stage2_steps,
+        cfg_scale=cfg,
         video_guider_params=video_gp,
         audio_guider_params=audio_gp,
     )

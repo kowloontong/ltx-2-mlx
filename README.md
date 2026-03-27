@@ -143,38 +143,49 @@ video_lat, audio_lat = pipe.extend_from_video(
 ltx-2-mlx generate   T2V / I2V / two-stage / HQ generation
   --prompt, -p        Text prompt (required)
   --output, -o        Output .mp4 path (required)
-  --image, -i         Reference image for I2V
   --model, -m         Model weights (default: dgrauet/ltx-2.3-mlx-q8)
   --height, -H        Video height (default: 480)
   --width, -W         Video width (default: 704)
   --frames, -f        Number of frames (default: 97)
-  --seed, -s          Random seed (default: 42)
-  --steps             Denoising steps (default: 8)
-  --two-stage         Enable two-stage pipeline
+  --seed, -s          Random seed (-1 = random)
+  --image, -i         Reference image for I2V
+  --steps             Denoising steps for one-stage (default: 8)
+  --two-stage         Enable two-stage pipeline (dev model + CFG)
   --hq                Enable HQ pipeline (res_2s sampler)
-  --stage1-steps      Stage 1 steps for two-stage/HQ
-  --stage2-steps      Stage 2 steps for two-stage/HQ
+  --cfg-scale         CFG guidance scale (default: 3.0)
+  --stg-scale         STG guidance scale (default: 0.0)
+  --stage1-steps      Stage 1 steps (default: 20)
+  --stage2-steps      Stage 2 steps (default: 3)
   --enhance-prompt    Enhance prompt with Gemma before generation
   --quiet, -q         Suppress progress output
 
 ltx-2-mlx a2v        Audio-to-Video generation
   --audio, -a         Input audio file (required)
   --fps               Frame rate (default: 24)
+  --audio-start       Audio start time in seconds (default: 0)
+  --stage1-steps      Stage 1 denoising steps
+  --stage2-steps      Stage 2 denoising steps
 
 ltx-2-mlx retake     Regenerate a time segment
   --video, -v         Source video file (required)
   --start             Start latent frame index (required)
   --end               End latent frame index (required)
+  --steps             Denoising steps (default: 8)
 
 ltx-2-mlx extend     Add frames before/after
   --video, -v         Source video file (required)
   --extend-frames     Number of latent frames to add (required)
   --direction         "before" or "after" (default: after)
+  --steps             Denoising steps (default: 8)
 
 ltx-2-mlx keyframe   Keyframe interpolation
   --start             Start keyframe image (required)
   --end               End keyframe image (required)
   --fps               Frame rate (default: 24)
+  --cfg-scale         CFG scale (default: 3.0)
+  --stg-scale         STG scale (default: 1.0)
+  --stage1-steps      Stage 1 denoising steps
+  --stage2-steps      Stage 2 denoising steps
 
 ltx-2-mlx enhance    Prompt enhancement (no generation)
   --mode              "t2v" or "i2v" (default: t2v)

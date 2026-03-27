@@ -34,8 +34,13 @@ class AudioToVideoPipeline(TextToVideoPipeline):
         low_memory: Aggressive memory management.
     """
 
-    def __init__(self, model_dir: str, low_memory: bool = True):
-        super().__init__(model_dir, low_memory=low_memory)
+    def __init__(
+        self,
+        model_dir: str,
+        gemma_model_id: str = "mlx-community/gemma-3-12b-it-4bit",
+        low_memory: bool = True,
+    ):
+        super().__init__(model_dir, gemma_model_id=gemma_model_id, low_memory=low_memory)
         self.audio_encoder: AudioVAEEncoder | None = None
         self.audio_processor: AudioProcessor | None = None
         self.upsampler: LatentUpsampler | None = None
