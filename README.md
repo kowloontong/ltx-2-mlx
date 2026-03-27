@@ -65,10 +65,10 @@ ltx-2-mlx keyframe --prompt "Smooth transition" --start frame1.png --end frame2.
 ltx-2-mlx enhance --prompt "a cat" --mode t2v
 
 # Use int4 model (fits 16GB)
-ltx-2-mlx generate -p "A cat" -o cat.mp4 --model dgrauet/ltx-2.3-mlx-distilled-q4
+ltx-2-mlx generate -p "A cat" -o cat.mp4 --model dgrauet/ltx-2.3-mlx-q4
 
 # Model info
-ltx-2-mlx info --model dgrauet/ltx-2.3-mlx-distilled-q8
+ltx-2-mlx info --model dgrauet/ltx-2.3-mlx-q8
 ```
 
 ### Python API
@@ -76,7 +76,7 @@ ltx-2-mlx info --model dgrauet/ltx-2.3-mlx-distilled-q8
 ```python
 from ltx_pipelines_mlx import TextToVideoPipeline
 
-pipe = TextToVideoPipeline(model_dir="dgrauet/ltx-2.3-mlx-distilled-q8")
+pipe = TextToVideoPipeline(model_dir="dgrauet/ltx-2.3-mlx-q8")
 pipe.generate_and_save(
     prompt="A sunset over the ocean with waves crashing",
     output_path="sunset.mp4",
@@ -92,7 +92,7 @@ Image-to-Video:
 ```python
 from ltx_pipelines_mlx import ImageToVideoPipeline
 
-pipe = ImageToVideoPipeline(model_dir="dgrauet/ltx-2.3-mlx-distilled-q8")
+pipe = ImageToVideoPipeline(model_dir="dgrauet/ltx-2.3-mlx-q8")
 pipe.generate_and_save(
     prompt="Animate this scene with gentle motion",
     output_path="animated.mp4",
@@ -105,7 +105,7 @@ Audio-to-Video:
 ```python
 from ltx_pipelines_mlx import AudioToVideoPipeline
 
-pipe = AudioToVideoPipeline(model_dir="dgrauet/ltx-2.3-mlx-distilled-q8")
+pipe = AudioToVideoPipeline(model_dir="dgrauet/ltx-2.3-mlx-q8")
 pipe.generate_and_save(
     prompt="A musician performing",
     output_path="a2v.mp4",
@@ -119,7 +119,7 @@ Retake / Extend:
 from ltx_pipelines_mlx import RetakePipeline, ExtendPipeline
 
 # Retake: regenerate latent frames 1-3
-pipe = RetakePipeline(model_dir="dgrauet/ltx-2.3-mlx-distilled-q8")
+pipe = RetakePipeline(model_dir="dgrauet/ltx-2.3-mlx-q8")
 video_lat, audio_lat = pipe.retake_from_video(
     prompt="A different scene",
     video_path="source.mp4",
@@ -128,7 +128,7 @@ video_lat, audio_lat = pipe.retake_from_video(
 )
 
 # Extend: add 2 latent frames after
-pipe = ExtendPipeline(model_dir="dgrauet/ltx-2.3-mlx-distilled-q8")
+pipe = ExtendPipeline(model_dir="dgrauet/ltx-2.3-mlx-q8")
 video_lat, audio_lat = pipe.extend_from_video(
     prompt="Continue the motion",
     video_path="source.mp4",
@@ -144,7 +144,7 @@ ltx-2-mlx generate   T2V / I2V / two-stage / HQ generation
   --prompt, -p        Text prompt (required)
   --output, -o        Output .mp4 path (required)
   --image, -i         Reference image for I2V
-  --model, -m         Model weights (default: dgrauet/ltx-2.3-mlx-distilled-q8)
+  --model, -m         Model weights (default: dgrauet/ltx-2.3-mlx-q8)
   --height, -H        Video height (default: 480)
   --width, -W         Video width (default: 704)
   --frames, -f        Number of frames (default: 97)
@@ -206,9 +206,9 @@ Higher frame counts require more RAM. With int4 on 32GB, 97 frames at 512x320 is
 
 | Variant | HuggingFace | Size | RAM |
 |---------|-------------|------|-----|
-| bf16 | [dgrauet/ltx-2.3-mlx-distilled](https://huggingface.co/dgrauet/ltx-2.3-mlx-distilled) | ~42 GB | 64 GB+ |
-| int8 | [dgrauet/ltx-2.3-mlx-distilled-q8](https://huggingface.co/dgrauet/ltx-2.3-mlx-distilled-q8) | ~21 GB | 32 GB+ |
-| int4 | [dgrauet/ltx-2.3-mlx-distilled-q4](https://huggingface.co/dgrauet/ltx-2.3-mlx-distilled-q4) | ~12 GB | 16 GB+ |
+| bf16 | [dgrauet/ltx-2.3-mlx](https://huggingface.co/dgrauet/ltx-2.3-mlx) | ~42 GB | 64 GB+ |
+| int8 | [dgrauet/ltx-2.3-mlx-q8](https://huggingface.co/dgrauet/ltx-2.3-mlx-q8) | ~21 GB | 32 GB+ |
+| int4 | [dgrauet/ltx-2.3-mlx-q4](https://huggingface.co/dgrauet/ltx-2.3-mlx-q4) | ~12 GB | 16 GB+ |
 
 Weights are pre-converted to MLX format by [mlx-forge](https://github.com/dgrauet/mlx-forge).
 

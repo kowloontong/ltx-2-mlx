@@ -11,7 +11,7 @@ Usage:
     ltx-2-mlx keyframe --prompt "transition" --start img1.png --end img2.png -o kf.mp4
     ltx-2-mlx ic-lora --prompt "scene" --lora lora.safetensors 1.0 --video-conditioning depth.mp4 1.0 -o out.mp4
     ltx-2-mlx enhance --prompt "a cat walking" --mode t2v
-    ltx-2-mlx info --model dgrauet/ltx-2.3-mlx-distilled-q8
+    ltx-2-mlx info --model dgrauet/ltx-2.3-mlx-q8
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import argparse
 import sys
 import time
 
-DEFAULT_MODEL = "dgrauet/ltx-2.3-mlx-distilled-q8"
+DEFAULT_MODEL = "dgrauet/ltx-2.3-mlx-q8"
 DEFAULT_GEMMA = "mlx-community/gemma-3-12b-it-4bit"
 
 
@@ -59,7 +59,7 @@ examples:
   ltx-2-mlx keyframe --prompt "transition" --start img1.png --end img2.png -o out.mp4
   ltx-2-mlx ic-lora --prompt "scene" --lora lora.safetensors 1.0 --video-conditioning depth.mp4 1.0 -o out.mp4
   ltx-2-mlx enhance --prompt "a cat walking" --mode t2v
-  ltx-2-mlx info --model dgrauet/ltx-2.3-mlx-distilled-q4
+  ltx-2-mlx info --model dgrauet/ltx-2.3-mlx-q4
 """,
     )
     sub = parser.add_subparsers(dest="command")
@@ -218,10 +218,6 @@ def _cmd_generate(args: argparse.Namespace) -> None:
     prompt = _maybe_enhance_prompt(args)
 
     if args.hq or args.two_stage:
-        # Two-stage requires the q8 model (dev + distilled LoRA)
-        if args.model == DEFAULT_MODEL:
-            args.model = "dgrauet/ltx-2.3-mlx-q8"
-
         if args.hq:
             from ltx_pipelines_mlx.ti2vid_two_stages_hq import TwoStageHQPipeline as PipeClass
 
