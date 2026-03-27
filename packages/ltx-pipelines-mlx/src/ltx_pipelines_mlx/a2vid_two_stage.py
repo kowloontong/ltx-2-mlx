@@ -1,7 +1,12 @@
-"""Audio-to-Video two-stage pipeline.
+"""Audio-to-Video two-stage pipeline — dev model + CFG + audio conditioning.
 
-Stage 1: Generate video at half resolution conditioned on encoded audio (audio frozen).
-Stage 2: Upscale video 2x and refine both modalities with distilled schedule.
+Matches the reference architecture:
+  Stage 1: Dev model + CFG at half resolution, audio frozen (encoded from input).
+  Stage 2: Dev + distilled LoRA fused, refine video + audio at full resolution.
+
+Requires the dev model + distilled LoRA weights (e.g. dgrauet/ltx-2.3-mlx-q8).
+
+Ported from ltx-pipelines/src/ltx_pipelines/a2vid_two_stage.py
 """
 
 from __future__ import annotations
@@ -10,28 +15,39 @@ from pathlib import Path
 
 import mlx.core as mx
 
+from ltx_core_mlx.components.guiders import (
+    MultiModalGuiderParams,
+    create_multimodal_guider_factory,
+)
 from ltx_core_mlx.components.patchifiers import compute_video_latent_shape
 from ltx_core_mlx.conditioning.types.latent_cond import LatentState, create_initial_state, noise_latent_state
 from ltx_core_mlx.model.audio_vae import AudioProcessor, AudioVAEEncoder, encode_audio
-from ltx_core_mlx.model.upsampler import LatentUpsampler
+from ltx_core_mlx.model.transformer.model import X0Model
 from ltx_core_mlx.utils.audio import load_audio
 from ltx_core_mlx.utils.memory import aggressive_cleanup
 from ltx_core_mlx.utils.positions import compute_audio_positions, compute_audio_token_count, compute_video_positions
 from ltx_core_mlx.utils.weights import load_split_safetensors, remap_audio_vae_keys
-from ltx_pipelines_mlx.scheduler import DISTILLED_SIGMAS, STAGE_2_SIGMAS
-from ltx_pipelines_mlx.ti2vid_one_stage import TextToVideoPipeline
-from ltx_pipelines_mlx.utils.samplers import denoise_loop
+from ltx_pipelines_mlx.scheduler import STAGE_2_SIGMAS, ltx2_schedule
+from ltx_pipelines_mlx.ti2vid_two_stages import DEFAULT_CFG_SCALE, TwoStagePipeline
+from ltx_pipelines_mlx.utils.samplers import denoise_loop, guided_denoise_loop
 
 
-class AudioToVideoPipeline(TextToVideoPipeline):
+class AudioToVideoPipeline(TwoStagePipeline):
     """Audio-to-Video two-stage generation pipeline.
 
-    Stage 1: Generate video at half spatial resolution with audio frozen.
-    Stage 2: Upscale latents 2x, then refine both video and audio.
+    Stage 1: Dev model + CFG at half spatial resolution, audio frozen.
+    Stage 2: Dev + distilled LoRA fused, refine video + audio at full resolution.
+
+    Inherits from TwoStagePipeline for dev model loading, LoRA fusion,
+    upsampler, VAE encoder, and decoder management.
 
     Args:
         model_dir: Path to model weights or HuggingFace repo ID.
+        gemma_model_id: Gemma model for text encoding.
         low_memory: Aggressive memory management.
+        dev_transformer: Dev transformer filename.
+        distilled_lora: Distilled LoRA filename for Stage 2.
+        distilled_lora_strength: LoRA fusion strength (default 1.0).
     """
 
     def __init__(
@@ -39,94 +55,94 @@ class AudioToVideoPipeline(TextToVideoPipeline):
         model_dir: str,
         gemma_model_id: str = "mlx-community/gemma-3-12b-it-4bit",
         low_memory: bool = True,
+        dev_transformer: str = "transformer-dev.safetensors",
+        distilled_lora: str = "ltx-2.3-22b-distilled-lora-384.safetensors",
+        distilled_lora_strength: float = 1.0,
     ):
-        super().__init__(model_dir, gemma_model_id=gemma_model_id, low_memory=low_memory)
+        super().__init__(
+            model_dir,
+            gemma_model_id=gemma_model_id,
+            low_memory=low_memory,
+            dev_transformer=dev_transformer,
+            distilled_lora=distilled_lora,
+            distilled_lora_strength=distilled_lora_strength,
+        )
         self.audio_encoder: AudioVAEEncoder | None = None
         self.audio_processor: AudioProcessor | None = None
-        self.upsampler: LatentUpsampler | None = None
 
-    def load(self) -> None:
-        """Load all components including audio encoder and upsampler."""
-        super().load()
+    def _load_audio_encoder(self) -> None:
+        """Load audio VAE encoder + processor."""
+        if self.audio_encoder is not None:
+            return
+        self.audio_encoder = AudioVAEEncoder()
+        encoder_weights = load_split_safetensors(
+            self.model_dir / "audio_vae.safetensors",
+            prefix="audio_vae.encoder.",
+        )
+        all_audio = load_split_safetensors(
+            self.model_dir / "audio_vae.safetensors",
+            prefix="audio_vae.",
+        )
+        for k, v in all_audio.items():
+            if k.startswith("per_channel_statistics."):
+                encoder_weights[k] = v
+        encoder_weights = remap_audio_vae_keys(encoder_weights)
+        self.audio_encoder.load_weights(list(encoder_weights.items()))
+        self.audio_processor = AudioProcessor()
+        aggressive_cleanup()
 
-        if self.audio_encoder is None:
-            self.audio_encoder = AudioVAEEncoder()
-            encoder_weights = load_split_safetensors(
-                self.model_dir / "audio_vae.safetensors",
-                prefix="audio_vae.encoder.",
-            )
-            # Also load per_channel_statistics (shared, not under encoder. prefix)
-            all_audio = load_split_safetensors(
-                self.model_dir / "audio_vae.safetensors",
-                prefix="audio_vae.",
-            )
-            for k, v in all_audio.items():
-                if k.startswith("per_channel_statistics."):
-                    encoder_weights[k] = v
-            encoder_weights = remap_audio_vae_keys(encoder_weights)
-            self.audio_encoder.load_weights(list(encoder_weights.items()))
-            aggressive_cleanup()
-
-            self.audio_processor = AudioProcessor()
-
-        if self.upsampler is None:
-            import json
-
-            name = "spatial_upscaler_x2_v1_1"
-            config_path = self.model_dir / f"{name}_config.json"
-            weights_path = self.model_dir / f"{name}.safetensors"
-            if config_path.exists():
-                config = json.loads(config_path.read_text()).get("config", {})
-                self.upsampler = LatentUpsampler.from_config(config)
-            else:
-                self.upsampler = LatentUpsampler()
-            if weights_path.exists():
-                weights = load_split_safetensors(weights_path, prefix=f"{name}.")
-                self.upsampler.load_weights(list(weights.items()))
-            aggressive_cleanup()
-
-    def generate(
+    def generate_and_save(
         self,
         prompt: str,
-        audio_path: str | Path,
+        output_path: str,
+        audio_path: str | Path | None = None,
         height: int = 480,
         width: int = 704,
         num_frames: int = 97,
         fps: float = 24.0,
         seed: int = 42,
-        stage1_steps: int | None = None,
+        stage1_steps: int = 20,
         stage2_steps: int | None = None,
+        cfg_scale: float = DEFAULT_CFG_SCALE,
+        stg_scale: float = 0.0,
         audio_start_time: float = 0.0,
         audio_max_duration: float | None = None,
-    ) -> tuple[mx.array, mx.array]:
-        """Generate video from audio + text prompt using two-stage pipeline.
+    ) -> str:
+        """Generate video from audio and save to file.
+
+        Uses the original input audio for the output (not VAE-decoded audio)
+        for maximum fidelity.
 
         Args:
-            prompt: Text description of the desired video.
-            audio_path: Path to audio file.
-            height: Output video height in pixels.
-            width: Output video width in pixels.
-            num_frames: Number of output video frames.
+            prompt: Text prompt.
+            output_path: Path to output video file.
+            audio_path: Path to input audio file (required).
+            height: Video height.
+            width: Video width.
+            num_frames: Number of frames.
             fps: Frame rate.
             seed: Random seed.
-            stage1_steps: Denoising steps for stage 1 (default: full schedule).
-            stage2_steps: Denoising steps for stage 2 (default: full schedule).
+            stage1_steps: Stage 1 denoising steps (default: 20).
+            stage2_steps: Stage 2 denoising steps.
+            cfg_scale: CFG guidance scale for stage 1 (default: 3.0).
+            stg_scale: STG guidance scale for stage 1 (default: 0.0).
             audio_start_time: Start time in seconds for audio.
-            audio_max_duration: Max audio duration (defaults to video duration).
+            audio_max_duration: Max audio duration.
 
         Returns:
-            Tuple of (video_latent, audio_latent) at full resolution.
+            Path to the output video file.
         """
-        self.load()
-        assert self.dit is not None
-        assert self.audio_encoder is not None
-        assert self.audio_processor is not None
-        assert self.upsampler is not None
+        if audio_path is None:
+            raise ValueError("audio_path is required for AudioToVideoPipeline")
 
         if audio_max_duration is None:
             audio_max_duration = num_frames / fps
 
-        # --- Load and encode audio ---
+        # --- Encode audio ---
+        self._load_audio_encoder()
+        assert self.audio_encoder is not None
+        assert self.audio_processor is not None
+
         audio_data = load_audio(
             audio_path,
             target_sample_rate=16000,
@@ -142,31 +158,70 @@ class AudioToVideoPipeline(TextToVideoPipeline):
             self.audio_encoder,
             self.audio_processor,
         )
-        if self.low_memory:
-            aggressive_cleanup()
 
-        # Patchify audio latent to tokens
+        # Patchify audio to tokens
         audio_T = compute_audio_token_count(num_frames, fps)
-        # Trim to expected length
         audio_latent = audio_latent[:, :, :audio_T, :]
         audio_tokens, _ = self.audio_patchifier.patchify(audio_latent)  # (1, audio_T, 128)
+        mx.synchronize()
 
-        # --- Encode text ---
-        video_embeds, audio_embeds = self._encode_text(prompt)
+        # Free audio encoder
         if self.low_memory:
+            self.audio_encoder = None
+            self.audio_processor = None
             aggressive_cleanup()
 
-        # --- Stage 1: Half-res video generation, audio frozen ---
+        # --- Text encoding (positive + negative for CFG) ---
+        if self.text_encoder is None or self.feature_extractor is None:
+            model_dir = self.model_dir
+            if self.text_encoder is None:
+                from ltx_core_mlx.text_encoders.gemma.encoders.base_encoder import GemmaLanguageModel
+
+                self.text_encoder = GemmaLanguageModel()
+                self.text_encoder.load(self._gemma_model_id)
+                aggressive_cleanup()
+            if self.feature_extractor is None:
+                from ltx_core_mlx.text_encoders.gemma.feature_extractor import GemmaFeaturesExtractorV2
+
+                self.feature_extractor = GemmaFeaturesExtractorV2()
+                conn_weights = load_split_safetensors(model_dir / "connector.safetensors", prefix="connector.")
+                self.feature_extractor.connector.load_weights(list(conn_weights.items()))
+                aggressive_cleanup()
+
+        video_embeds, audio_embeds = self._encode_text(prompt)
+
+        from ltx_pipelines_mlx.utils.constants import DEFAULT_NEGATIVE_PROMPT
+
+        neg_video_embeds, neg_audio_embeds = self._encode_text(DEFAULT_NEGATIVE_PROMPT)
+        mx.synchronize()
+
+        # Free text encoder before loading DiT
+        self.text_encoder = None
+        self.feature_extractor = None
+        aggressive_cleanup()
+
+        # --- Load DiT + VAE encoder + upsampler ---
+        if self.dit is None:
+            self.dit = self._load_dev_transformer()
+        self._load_vae_encoder()
+        if self.upsampler is None:
+            self._load_upsampler()
+
+        assert self.dit is not None
+        assert self.vae_encoder is not None
+        assert self.upsampler is not None
+
+        # --- Stage 1: Half resolution with CFG, audio frozen ---
         half_h, half_w = height // 2, width // 2
         F, H_half, W_half = compute_video_latent_shape(num_frames, half_h, half_w)
         video_shape = (1, F * H_half * W_half, 128)
 
-        video_positions_1 = compute_video_positions(F, H_half, W_half, fps)
+        video_positions_1 = compute_video_positions(F, H_half, W_half)
         audio_positions = compute_audio_positions(audio_T)
 
         video_state_1 = create_initial_state(video_shape, seed, positions=video_positions_1)
 
-        # Audio frozen in stage 1 (denoise_mask=0 = preserve)
+        # Audio frozen in Stage 1 (denoise_mask=0 = preserve)
         audio_state_1 = LatentState(
             latent=audio_tokens,
             clean_latent=audio_tokens,
@@ -174,57 +229,83 @@ class AudioToVideoPipeline(TextToVideoPipeline):
             positions=audio_positions,
         )
 
-        sigmas_1 = DISTILLED_SIGMAS[: stage1_steps + 1] if stage1_steps else DISTILLED_SIGMAS
-        from ltx_core_mlx.model.transformer.model import X0Model
-
+        # Stage 1 sigma schedule (dynamic for dev model)
+        num_tokens = F * H_half * W_half
+        sigmas_1 = ltx2_schedule(stage1_steps, num_tokens=num_tokens)
         x0_model = X0Model(self.dit)
 
-        output_1 = denoise_loop(
+        # Build guidance — video gets CFG, audio doesn't (frozen)
+        video_gp = MultiModalGuiderParams(cfg_scale=cfg_scale, stg_scale=stg_scale)
+        audio_gp = MultiModalGuiderParams()
+
+        video_factory = create_multimodal_guider_factory(video_gp, negative_context=neg_video_embeds)
+        audio_factory = create_multimodal_guider_factory(audio_gp, negative_context=neg_audio_embeds)
+
+        output_1 = guided_denoise_loop(
             model=x0_model,
             video_state=video_state_1,
             audio_state=audio_state_1,
             video_text_embeds=video_embeds,
             audio_text_embeds=audio_embeds,
+            video_guider_factory=video_factory,
+            audio_guider_factory=audio_factory,
             sigmas=sigmas_1,
         )
         if self.low_memory:
             aggressive_cleanup()
 
-        # --- Upscale video latents 2x ---
+        # --- Fuse distilled LoRA for Stage 2 ---
+        self._fuse_distilled_lora(self.dit)
+
+        # --- Upscale with denormalize/renormalize ---
         video_half = self.video_patchifier.unpatchify(output_1.video_latent, (F, H_half, W_half))
-        video_upscaled = self.upsampler(video_half)
+
+        video_mlx = video_half.transpose(0, 2, 3, 4, 1)  # (B,C,F,H,W) -> (B,F,H,W,C)
+        video_denorm = self.vae_encoder.denormalize_latent(video_mlx)
+        video_denorm = video_denorm.transpose(0, 4, 1, 2, 3)
+        video_upscaled = self.upsampler(video_denorm)
+        video_up_mlx = video_upscaled.transpose(0, 2, 3, 4, 1)
+        video_upscaled = self.vae_encoder.normalize_latent(video_up_mlx)
+        video_upscaled = video_upscaled.transpose(0, 4, 1, 2, 3)
+        mx.synchronize()
+
+        # Derive full-resolution dims from actual upscaled shape
+        H_full = H_half * 2
+        W_full = W_half * 2
+
+        # Free VAE encoder + upsampler before Stage 2
         if self.low_memory:
+            self.vae_encoder = None
+            self.upsampler = None
             aggressive_cleanup()
 
-        # --- Stage 2: Refine at full resolution ---
-        _, H_full, W_full = compute_video_latent_shape(num_frames, height, width)
-        video_tokens_up, _ = self.video_patchifier.patchify(video_upscaled)
+        # --- Stage 2: Refine at full resolution (no CFG) ---
+        video_tokens, _ = self.video_patchifier.patchify(video_upscaled)
 
         sigmas_2 = STAGE_2_SIGMAS[: stage2_steps + 1] if stage2_steps else STAGE_2_SIGMAS
         start_sigma = sigmas_2[0]
 
-        # Add noise to upscaled video
         mx.random.seed(seed + 2)
-        noise = mx.random.normal(video_tokens_up.shape).astype(mx.bfloat16)
-        noisy_tokens = noise * start_sigma + video_tokens_up * (1.0 - start_sigma)
+        noise = mx.random.normal(video_tokens.shape).astype(mx.bfloat16)
+        noisy_tokens = noise * start_sigma + video_tokens * (1.0 - start_sigma)
 
-        video_positions_2 = compute_video_positions(F, H_full, W_full, fps)
+        video_positions_2 = compute_video_positions(F, H_full, W_full)
 
         video_state_2 = LatentState(
             latent=noisy_tokens,
-            clean_latent=video_tokens_up,
-            denoise_mask=mx.ones((1, video_tokens_up.shape[1], 1), dtype=mx.bfloat16),
+            clean_latent=video_tokens,
+            denoise_mask=mx.ones((1, video_tokens.shape[1], 1), dtype=mx.bfloat16),
             positions=video_positions_2,
         )
 
-        # Audio gets noised and refined in stage 2
+        # Audio gets noised and refined in Stage 2
         audio_state_2 = LatentState(
             latent=audio_tokens,
             clean_latent=audio_tokens,
             denoise_mask=mx.ones((1, audio_tokens.shape[1], 1), dtype=audio_tokens.dtype),
             positions=audio_positions,
         )
-        audio_state_2 = noise_latent_state(audio_state_2, sigma=start_sigma, seed=seed + 3)
+        audio_state_2 = noise_latent_state(audio_state_2, sigma=start_sigma, seed=seed + 2)
 
         output_2 = denoise_loop(
             model=x0_model,
@@ -237,85 +318,31 @@ class AudioToVideoPipeline(TextToVideoPipeline):
         if self.low_memory:
             aggressive_cleanup()
 
-        # Unpatchify outputs
         video_latent = self.video_patchifier.unpatchify(output_2.video_latent, (F, H_full, W_full))
-        audio_latent = self.audio_patchifier.unpatchify(output_2.audio_latent)
 
-        return video_latent, audio_latent
+        # --- Decode and save ---
+        if self.low_memory:
+            self.dit = None
+            self._loaded = False
+            aggressive_cleanup()
 
-    def generate_and_save(
-        self,
-        prompt: str,
-        output_path: str,
-        audio_path: str | Path | None = None,
-        height: int = 480,
-        width: int = 704,
-        num_frames: int = 97,
-        fps: float = 24.0,
-        seed: int = 42,
-        stage1_steps: int | None = None,
-        stage2_steps: int | None = None,
-        audio_start_time: float = 0.0,
-        audio_max_duration: float | None = None,
-    ) -> str:
-        """Generate video from audio and save to file.
+        self._load_decoders()
 
-        Uses the original input audio for the output (not VAE-decoded audio)
-        for maximum fidelity.
-
-        Args:
-            prompt: Text prompt.
-            output_path: Path to output video file.
-            audio_path: Path to input audio file.
-            height: Video height.
-            width: Video width.
-            num_frames: Number of frames.
-            fps: Frame rate.
-            seed: Random seed.
-            stage1_steps: Denoising steps for stage 1.
-            stage2_steps: Denoising steps for stage 2.
-            audio_start_time: Start time in seconds for audio.
-            audio_max_duration: Max audio duration.
-
-        Returns:
-            Path to the output video file.
-
-        Raises:
-            ValueError: If audio_path is not provided or has no audio.
-        """
-        if audio_path is None:
-            raise ValueError("audio_path is required for AudioToVideoPipeline")
-
-        video_latent, _audio_latent = self.generate(
-            prompt=prompt,
-            audio_path=audio_path,
-            height=height,
-            width=width,
-            num_frames=num_frames,
-            fps=fps,
-            seed=seed,
-            stage1_steps=stage1_steps,
-            stage2_steps=stage2_steps,
-            audio_start_time=audio_start_time,
-            audio_max_duration=audio_max_duration,
-        )
-
-        # Extract original audio segment to temp WAV for muxing
+        # Use original audio for output (higher fidelity than VAE-decoded)
         import tempfile
 
-        audio_data = load_audio(
+        audio_data_48k = load_audio(
             audio_path,
             target_sample_rate=48000,
             start_time=audio_start_time,
-            max_duration=audio_max_duration if audio_max_duration else num_frames / fps,
+            max_duration=audio_max_duration,
         )
-        if audio_data is not None:
+        if audio_data_48k is not None:
             temp_audio = tempfile.mktemp(suffix=".wav")
-            self._save_waveform(audio_data.waveform, temp_audio, sample_rate=48000)
+            self._save_waveform(audio_data_48k.waveform, temp_audio, sample_rate=48000)
         else:
             temp_audio = None
 
-        # Decode video and stream to ffmpeg with original audio
         assert self.vae_decoder is not None
         self.vae_decoder.decode_and_stream(
             video_latent,
@@ -324,7 +351,6 @@ class AudioToVideoPipeline(TextToVideoPipeline):
             audio_path=temp_audio,
         )
 
-        # Cleanup temp audio
         if temp_audio is not None:
             Path(temp_audio).unlink(missing_ok=True)
         aggressive_cleanup()

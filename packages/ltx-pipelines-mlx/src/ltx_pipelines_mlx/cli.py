@@ -102,8 +102,10 @@ examples:
     a2v.add_argument("--audio", "-a", required=True, help="Input audio file (WAV/MP3/etc.)")
     a2v.add_argument("--fps", type=float, default=24.0, help="Frame rate (default: 24)")
     a2v.add_argument("--audio-start", type=float, default=0.0, help="Audio start time in seconds (default: 0)")
-    a2v.add_argument("--stage1-steps", type=int, default=None, help="Stage 1 denoising steps")
-    a2v.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 denoising steps")
+    a2v.add_argument("--stage1-steps", type=int, default=20, help="Stage 1 denoising steps (default: 20)")
+    a2v.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 denoising steps (default: 3)")
+    a2v.add_argument("--cfg-scale", type=float, default=3.0, help="CFG guidance scale (default: 3.0)")
+    a2v.add_argument("--stg-scale", type=float, default=0.0, help="STG guidance scale (default: 0.0)")
 
     # --- retake ---
     ret = sub.add_parser("retake", help="Regenerate a time segment of an existing video")
@@ -315,6 +317,10 @@ def _cmd_a2v(args: argparse.Namespace) -> None:
         print("Mode: Audio-to-Video")
         print(f"Audio: {args.audio}")
 
+    if not args.quiet:
+        print(f"  Model: {args.model}")
+        print(f"  CFG scale: {args.cfg_scale}")
+
     pipe = AudioToVideoPipeline(model_dir=args.model, gemma_model_id=args.gemma)
     pipe.generate_and_save(
         prompt=args.prompt,
@@ -327,6 +333,8 @@ def _cmd_a2v(args: argparse.Namespace) -> None:
         seed=args.seed,
         stage1_steps=args.stage1_steps,
         stage2_steps=args.stage2_steps,
+        cfg_scale=args.cfg_scale,
+        stg_scale=args.stg_scale,
         audio_start_time=args.audio_start,
     )
 
