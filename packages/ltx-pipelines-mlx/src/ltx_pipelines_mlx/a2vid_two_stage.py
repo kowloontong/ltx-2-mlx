@@ -109,7 +109,7 @@ class AudioToVideoPipeline(TwoStagePipeline):
         neg_audio_embeds: mx.array,
         sigmas: list[float],
         cfg_scale: float = 3.0,
-        stg_scale: float = 1.0,
+        stg_scale: float = 0.0,
     ) -> object:
         """Run Stage 1 denoising with Euler + CFG. Override for HQ (res2s)."""
         # Video: full guidance (ref LTX_2_3_PARAMS)
@@ -150,7 +150,7 @@ class AudioToVideoPipeline(TwoStagePipeline):
         stage1_steps: int = 30,
         stage2_steps: int | None = None,
         cfg_scale: float = DEFAULT_CFG_SCALE,
-        stg_scale: float = 1.0,
+        stg_scale: float = 0.0,
         image: str | None = None,
         audio_start_time: float = 0.0,
         audio_max_duration: float | None = None,
