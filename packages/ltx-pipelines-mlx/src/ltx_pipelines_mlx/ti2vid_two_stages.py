@@ -245,10 +245,10 @@ class TwoStagePipeline(TextToVideoPipeline):
         width: int = 704,
         num_frames: int = 97,
         seed: int = 42,
-        stage1_steps: int = 20,
+        stage1_steps: int = 30,
         stage2_steps: int | None = None,
         cfg_scale: float = DEFAULT_CFG_SCALE,
-        stg_scale: float = 0.0,
+        stg_scale: float = 1.0,
         image: str | None = None,
         video_guider_params: MultiModalGuiderParams | None = None,
         audio_guider_params: MultiModalGuiderParams | None = None,
@@ -357,9 +357,21 @@ class TwoStagePipeline(TextToVideoPipeline):
 
         # Build guider params
         if video_guider_params is None:
-            video_guider_params = MultiModalGuiderParams(cfg_scale=cfg_scale, stg_scale=stg_scale)
+            video_guider_params = MultiModalGuiderParams(
+                cfg_scale=cfg_scale,
+                stg_scale=stg_scale,
+                rescale_scale=0.7,
+                modality_scale=3.0,
+                stg_blocks=[28],
+            )
         if audio_guider_params is None:
-            audio_guider_params = MultiModalGuiderParams(cfg_scale=cfg_scale, stg_scale=stg_scale)
+            audio_guider_params = MultiModalGuiderParams(
+                cfg_scale=7.0,
+                stg_scale=stg_scale,
+                rescale_scale=0.7,
+                modality_scale=3.0,
+                stg_blocks=[28],
+            )
 
         video_factory = create_multimodal_guider_factory(video_guider_params, negative_context=neg_video_embeds)
         audio_factory = create_multimodal_guider_factory(audio_guider_params, negative_context=neg_audio_embeds)
@@ -474,10 +486,10 @@ class TwoStagePipeline(TextToVideoPipeline):
         width: int = 704,
         num_frames: int = 97,
         seed: int = 42,
-        stage1_steps: int = 20,
+        stage1_steps: int = 30,
         stage2_steps: int | None = None,
         cfg_scale: float = DEFAULT_CFG_SCALE,
-        stg_scale: float = 0.0,
+        stg_scale: float = 1.0,
         image: str | None = None,
         video_guider_params: MultiModalGuiderParams | None = None,
         audio_guider_params: MultiModalGuiderParams | None = None,

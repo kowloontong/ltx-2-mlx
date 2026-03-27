@@ -79,10 +79,10 @@ examples:
         help="Two-stage pipeline: dev model + CFG at half-res, upscale, distilled LoRA refine (requires q8 model)",
     )
     gen.add_argument("--hq", action="store_true", help="HQ two-stage pipeline (res_2s sampler for stage 1)")
-    gen.add_argument("--stage1-steps", type=int, default=20, help="Stage 1 denoising steps (default: 20)")
-    gen.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 denoising steps (default: 3)")
-    gen.add_argument("--cfg-scale", type=float, default=3.0, help="CFG guidance scale for stage 1 (default: 3.0)")
-    gen.add_argument("--stg-scale", type=float, default=0.0, help="STG guidance scale for stage 1 (default: 0.0)")
+    gen.add_argument("--stage1-steps", type=int, default=None, help="Stage 1 steps (default: 30 standard, 15 HQ)")
+    gen.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 steps (default: 3)")
+    gen.add_argument("--cfg-scale", type=float, default=None, help="CFG guidance scale (default: 3.0)")
+    gen.add_argument("--stg-scale", type=float, default=None, help="STG guidance scale (default: 1.0 standard, 0.0 HQ)")
     gen.add_argument(
         "--dev-transformer",
         default="transformer-dev.safetensors",
@@ -102,10 +102,10 @@ examples:
     a2v.add_argument("--audio", "-a", required=True, help="Input audio file (WAV/MP3/etc.)")
     a2v.add_argument("--fps", type=float, default=24.0, help="Frame rate (default: 24)")
     a2v.add_argument("--audio-start", type=float, default=0.0, help="Audio start time in seconds (default: 0)")
-    a2v.add_argument("--stage1-steps", type=int, default=20, help="Stage 1 denoising steps (default: 20)")
-    a2v.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 denoising steps (default: 3)")
-    a2v.add_argument("--cfg-scale", type=float, default=3.0, help="CFG guidance scale (default: 3.0)")
-    a2v.add_argument("--stg-scale", type=float, default=0.0, help="STG guidance scale (default: 0.0)")
+    a2v.add_argument("--stage1-steps", type=int, default=None, help="Stage 1 steps (default: 30 standard, 15 HQ)")
+    a2v.add_argument("--stage2-steps", type=int, default=None, help="Stage 2 steps (default: 3)")
+    a2v.add_argument("--cfg-scale", type=float, default=None, help="CFG guidance scale (default: 3.0)")
+    a2v.add_argument("--stg-scale", type=float, default=None, help="STG guidance scale (default: 1.0 standard, 0.0 HQ)")
     a2v.add_argument("--image", "-i", default=None, help="Reference image for I2V conditioning (optional)")
     a2v.add_argument("--hq", action="store_true", help="HQ mode: use res_2s sampler for stage 1")
 
@@ -241,7 +241,6 @@ def _cmd_generate(args: argparse.Namespace) -> None:
         if not args.quiet:
             print(f"Mode: {mode_name}")
             print(f"  Model: {args.model}")
-            print(f"  CFG scale: {args.cfg_scale}")
 
         pipe = PipeClass(
             model_dir=args.model,
@@ -251,19 +250,25 @@ def _cmd_generate(args: argparse.Namespace) -> None:
             distilled_lora=args.distilled_lora,
             distilled_lora_strength=args.lora_strength,
         )
-        pipe.generate_and_save(
+        # Only pass non-None overrides; pipeline defaults take over otherwise
+        kwargs: dict = dict(
             prompt=prompt,
             output_path=args.output,
             height=args.height,
             width=args.width,
             num_frames=args.frames,
             seed=args.seed,
-            stage1_steps=args.stage1_steps,
-            stage2_steps=args.stage2_steps,
-            cfg_scale=args.cfg_scale,
-            stg_scale=args.stg_scale,
             image=args.image,
         )
+        if args.stage1_steps is not None:
+            kwargs["stage1_steps"] = args.stage1_steps
+        if args.stage2_steps is not None:
+            kwargs["stage2_steps"] = args.stage2_steps
+        if args.cfg_scale is not None:
+            kwargs["cfg_scale"] = args.cfg_scale
+        if args.stg_scale is not None:
+            kwargs["stg_scale"] = args.stg_scale
+        pipe.generate_and_save(**kwargs)
 
     elif args.image:
         from ltx_pipelines_mlx.ti2vid_one_stage import ImageToVideoPipeline
@@ -326,10 +331,9 @@ def _cmd_a2v(args: argparse.Namespace) -> None:
         print(f"Mode: {mode_name}")
         print(f"Audio: {args.audio}")
         print(f"  Model: {args.model}")
-        print(f"  CFG scale: {args.cfg_scale}")
 
     pipe = PipeClass(model_dir=args.model, gemma_model_id=args.gemma)
-    pipe.generate_and_save(
+    kwargs: dict = dict(
         prompt=args.prompt,
         output_path=args.output,
         audio_path=args.audio,
@@ -338,13 +342,18 @@ def _cmd_a2v(args: argparse.Namespace) -> None:
         num_frames=args.frames,
         fps=args.fps,
         seed=args.seed,
-        stage1_steps=args.stage1_steps,
-        stage2_steps=args.stage2_steps,
-        cfg_scale=args.cfg_scale,
-        stg_scale=args.stg_scale,
         image=args.image,
         audio_start_time=args.audio_start,
     )
+    if args.stage1_steps is not None:
+        kwargs["stage1_steps"] = args.stage1_steps
+    if args.stage2_steps is not None:
+        kwargs["stage2_steps"] = args.stage2_steps
+    if args.cfg_scale is not None:
+        kwargs["cfg_scale"] = args.cfg_scale
+    if args.stg_scale is not None:
+        kwargs["stg_scale"] = args.stg_scale
+    pipe.generate_and_save(**kwargs)
 
     _print_result(args.output, t0, args.quiet)
 

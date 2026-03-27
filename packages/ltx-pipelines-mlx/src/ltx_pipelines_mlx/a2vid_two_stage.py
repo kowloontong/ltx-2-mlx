@@ -109,11 +109,18 @@ class AudioToVideoPipeline(TwoStagePipeline):
         neg_audio_embeds: mx.array,
         sigmas: list[float],
         cfg_scale: float = 3.0,
-        stg_scale: float = 0.0,
+        stg_scale: float = 1.0,
     ) -> object:
         """Run Stage 1 denoising with Euler + CFG. Override for HQ (res2s)."""
-        # Video gets CFG, audio doesn't (frozen)
-        video_gp = MultiModalGuiderParams(cfg_scale=cfg_scale, stg_scale=stg_scale)
+        # Video: full guidance (ref LTX_2_3_PARAMS)
+        video_gp = MultiModalGuiderParams(
+            cfg_scale=cfg_scale,
+            stg_scale=stg_scale,
+            rescale_scale=0.7,
+            modality_scale=3.0,
+            stg_blocks=[28],
+        )
+        # Audio: no guidance (frozen in Stage 1)
         audio_gp = MultiModalGuiderParams()
 
         video_factory = create_multimodal_guider_factory(video_gp, negative_context=neg_video_embeds)
@@ -140,10 +147,10 @@ class AudioToVideoPipeline(TwoStagePipeline):
         num_frames: int = 97,
         fps: float = 24.0,
         seed: int = 42,
-        stage1_steps: int = 20,
+        stage1_steps: int = 30,
         stage2_steps: int | None = None,
         cfg_scale: float = DEFAULT_CFG_SCALE,
-        stg_scale: float = 0.0,
+        stg_scale: float = 1.0,
         image: str | None = None,
         audio_start_time: float = 0.0,
         audio_max_duration: float | None = None,
