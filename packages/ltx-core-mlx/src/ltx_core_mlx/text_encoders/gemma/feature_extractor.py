@@ -285,17 +285,3 @@ class GemmaFeaturesExtractorV2(nn.Module):
 
         # Project and refine through connectors
         return self.connector(stacked, attention_mask=attention_mask)
-
-
-def _per_token_rms_norm(x: mx.array, eps: float = 1e-6) -> mx.array:
-    """Per-token RMS normalization: x / rms(x) * sqrt(dim).
-
-    Args:
-        x: (B, seq_len, dim).
-
-    Returns:
-        Normalized tensor of same shape.
-    """
-    rms = mx.sqrt(mx.mean(x * x, axis=-1, keepdims=True) + eps)
-    dim = x.shape[-1]
-    return x / rms * (dim**0.5)

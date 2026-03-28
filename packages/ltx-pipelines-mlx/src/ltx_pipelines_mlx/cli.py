@@ -95,7 +95,9 @@ examples:
         default="ltx-2.3-22b-distilled-lora-384.safetensors",
         help="Distilled LoRA filename for stage 2 (default: ltx-2.3-22b-distilled-lora-384.safetensors)",
     )
-    gen.add_argument("--lora-strength", type=float, default=1.0, help="Distilled LoRA strength (default: 1.0)")
+    gen.add_argument(
+        "--distilled-lora-strength", type=float, default=1.0, help="Distilled LoRA strength for stage 2 (default: 1.0)"
+    )
     gen.add_argument("--enhance-prompt", action="store_true", help="Enhance prompt using Gemma before generation")
     gen.add_argument(
         "--lora",
@@ -289,7 +291,7 @@ def _cmd_generate(args: argparse.Namespace) -> None:
             low_memory=True,
             dev_transformer=args.dev_transformer,
             distilled_lora=args.distilled_lora,
-            distilled_lora_strength=args.lora_strength,
+            distilled_lora_strength=args.distilled_lora_strength,
         )
         if lora_paths:
             pipe._pending_loras = lora_paths
@@ -687,12 +689,6 @@ def _cmd_train(args: argparse.Namespace) -> None:
 
 def _cmd_preprocess(args: argparse.Namespace) -> None:
     """Preprocess videos into latents + conditions for training."""
-    # Set Metal cache limit early to prevent GPU watchdog timeouts
-    # when loading large models (Gemma 12B + connector ~7GB)
-    import mlx.core as mx
-
-    mx.set_cache_limit(mx.device_info()["memory_size"])
-
     try:
         from ltx_trainer_mlx.preprocess import preprocess_dataset
     except ImportError:
