@@ -123,14 +123,8 @@ class Attention(nn.Module):
                 cos_fk, sin_fk = cos_f, sin_f
             k = _apply(k, cos_fk, sin_fk)
 
-        # Scaled dot-product attention
-        attn_weights = (q @ k.transpose(0, 1, 3, 2)) * self.scale
-
-        if attention_mask is not None:
-            attn_weights = attn_weights + attention_mask
-
-        attn_weights = mx.softmax(attn_weights, axis=-1)
-        out = attn_weights @ v
+        # Scaled dot-product attention (fused Flash Attention kernel)
+        out = mx.fast.scaled_dot_product_attention(q, k, v, scale=self.scale, mask=attention_mask)
 
         # STG perturbation: blend attn output with value projection
         # Reference: out = attn_out * mask + v * (1 - mask)

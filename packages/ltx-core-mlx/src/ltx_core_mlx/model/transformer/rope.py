@@ -150,6 +150,7 @@ def precompute_rope_freqs(
         return cos_f, sin_f, rope_type
 
 
+@mx.compile
 def apply_rope_interleaved(
     x: mx.array,
     cos_freqs: mx.array,
@@ -179,6 +180,7 @@ def apply_rope_interleaved(
     return x * cos_f + x_rot * sin_f
 
 
+@mx.compile
 def apply_rope_split(
     x: mx.array,
     cos_freqs: mx.array,
