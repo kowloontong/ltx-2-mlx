@@ -94,7 +94,11 @@ class RetakePipeline(TextToVideoPipeline):
         video_path = str(video_path)
         info = probe_video_info(video_path)
 
-        video_tensor = load_video_frames(video_path, info.height, info.width, info.num_frames)
+        # Round to nearest VAE-compatible frame count (1 + 8k)
+        k = max(1, round((info.num_frames - 1) / 8))
+        vae_compatible_frames = 1 + k * 8
+
+        video_tensor = load_video_frames(video_path, info.height, info.width, vae_compatible_frames)
         video_latent = self.vae_encoder.encode(video_tensor)
         mx.synchronize()
         if self.low_memory:
@@ -108,7 +112,7 @@ class RetakePipeline(TextToVideoPipeline):
             audio_data = load_audio(
                 video_path,
                 target_sample_rate=16000,
-                max_duration=info.num_frames / info.fps,
+                max_duration=vae_compatible_frames / info.fps,
             )
             if audio_data is not None:
                 audio_latent = encode_audio(
@@ -121,7 +125,7 @@ class RetakePipeline(TextToVideoPipeline):
                     aggressive_cleanup()
 
         if audio_latent is None:
-            audio_T = compute_audio_token_count(info.num_frames)
+            audio_T = compute_audio_token_count(vae_compatible_frames)
             audio_latent = mx.zeros((1, 8, audio_T, 16), dtype=mx.bfloat16)
 
         # Free encoders before text encoding
@@ -139,7 +143,7 @@ class RetakePipeline(TextToVideoPipeline):
             end_frame=end_frame,
             height=info.height,
             width=info.width,
-            num_frames=info.num_frames,
+            num_frames=vae_compatible_frames,
             seed=seed,
             num_steps=num_steps,
             cfg_scale=cfg_scale,
