@@ -1,0 +1,33 @@
+# Web UI Configuration for LTX-2 MLX
+
+# Flux image generator settings
+flux:
+  script_dir: ~/work/flux-gguf-image-gen
+  model_dir: ~/work/flux-gguf-image-gen/models
+  output_dir: outputs/webui/flux
+  default_width: 1024
+  default_height: 1024
+  default_steps: 4
+  default_cfg_scale: 1.0
+
+# LTX video generator settings
+ltx:
+  model_dir: models/ltx-2.3-mlx-q8
+  output_dir: outputs/webui
+  default_height: 576
+  default_width: 832
+  default_frames: 97
+
+# Pipeline settings (defaults to two-stage HQ for best quality)
+pipeline:
+  default_pipeline: two-stage-hq  # Options: one-stage, two-stage, two-stage-hq
+  default_cfg_scale: 3.5
+  default_stage1_steps: 20
+  default_stage2_steps: 5
+
+  # I2V-specific settings
+  i2v_cfg_scale: 3.0
+  i2v_frames: 65  # Fewer frames for I2V to maintain detail
+
+# Prompt enhancement model
+qwen_model_path: ~/models/Qwen3.5-27B.Q4_K_M.gguf
