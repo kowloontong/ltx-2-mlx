@@ -231,7 +231,124 @@ with tab3:
         if not theme_words:
             st.error("请输入主题词")
         else:
-            st.info("快闪工作流实现中...")
+            # Parse theme words into scenes
+            scenes = [s.strip() for s in theme_words.strip().split("\n") if s.strip()]
+            
+            # Extend scenes if needed
+            while len(scenes) < scene_count:
+                for s in scenes.copy():
+                    if len(scenes) >= scene_count:
+                        break
+                    scenes.append(s + " extended")
+            scenes = scenes[:scene_count]
+            
+            # Create output directory
+            output_dir = config.ltx.output_dir / "flash"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            temp_dir = output_dir / "temp"
+            temp_dir.mkdir(exist_ok=True)
+            
+            # Progress tracking
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            segment_paths = []
+            
+            # Generate each segment
+            for i, scene in enumerate(scenes):
+                status_text.text(f"生成段 {i+1}/{scene_count}: {scene[:50]}...")
+                progress_bar.progress((i + 0.5) / scene_count)
+                
+                segment_output = temp_dir / f"segment_{i:03d}.mp4"
+                
+                if mode == "i2v":
+                    # I2V mode: Flux image + LTX I2V
+                    # Step 1: Generate Flux image
+                    image_path = temp_dir / f"image_{i:03d}.png"
+                    success, error = flux_gen.generate(
+                        prompt=scene,
+                        output_path=str(image_path),
+                    )
+                    
+                    if not success:
+                        st.error(f"段 {i+1} Flux 生成失败: {error}")
+                        break
+                    
+                    # Step 2: Enhance prompt
+                    enhanced_prompt = prompt_enhancer.enhance_flash_prompt(scene, seed=seed + i)
+                    
+                    # Step 3: LTX I2V
+                    success, error = ltx_gen.generate_i2v(
+                        prompt=enhanced_prompt,
+                        image_path=str(image_path),
+                        output_path=str(segment_output),
+                        frames=frames_per_segment,
+                        seed=seed + i,
+                        pipeline_type=pipeline_type,
+                    )
+                else:
+                    # T2V mode: Pure LTX T2V
+                    enhanced_prompt = prompt_enhancer.enhance_flash_prompt(scene, seed=seed + i)
+                    
+                    success, error = ltx_gen.generate_t2v(
+                        prompt=enhanced_prompt,
+                        output_path=str(segment_output),
+                        frames=frames_per_segment,
+                        seed=seed + i,
+                        pipeline_type=pipeline_type,
+                    )
+                
+                if not success:
+                    st.error(f"段 {i+1} 生成失败: {error}")
+                    break
+                
+                segment_paths.append(str(segment_output))
+                progress_bar.progress((i + 1) / scene_count)
+            
+            # Concatenate videos
+            if len(segment_paths) == scene_count:
+                status_text.text("拼接视频中...")
+                
+                import subprocess
+                output_path = output_dir / "flash_output.mp4"
+                filelist_path = output_dir / "filelist.txt"
+                
+                # Create file list
+                with open(filelist_path, "w") as f:
+                    for path in segment_paths:
+                        f.write(f"file '{path}'\n")
+                
+                # Concatenate with ffmpeg
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-f", "concat",
+                    "-safe", "0",
+                    "-i", str(filelist_path),
+                    "-c", "copy",
+                    str(output_path)
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True)
+                
+                # Clean up
+                try:
+                    filelist_path.unlink()
+                except:
+                    pass
+                
+                if result.returncode == 0 and output_path.exists():
+                    progress_bar.progress(1.0)
+                    status_text.text("✅ 生成完成！")
+                    st.success("✅ 快闪视频生成成功！")
+                    st.video(str(output_path))
+                    
+                    # Show segment info
+                    with st.expander("📊 生成详情"):
+                        for i, scene in enumerate(scenes):
+                            st.markdown(f"**段 {i+1}:** {scene}")
+                else:
+                    st.error("视频拼接失败")
+            else:
+                st.error("部分段生成失败，无法拼接")
 
 # Tab 4: I2V Generation
 with tab4:
