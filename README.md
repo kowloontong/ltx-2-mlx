@@ -9,10 +9,11 @@ Pure MLX port of [LTX-2](https://github.com/Lightricks/LTX-2) for Apple Silicon.
 - **Audio-to-Video** — generate video conditioned on an audio track
 - **Retake / Extend** — edit existing videos (regenerate segments, add frames)
 - **Keyframe interpolation** — smooth transition between reference images
-- **IC-LoRA** — reference video conditioning (depth/pose/edges)
+- **IC-LoRA** — reference video conditioning (depth/pose/edges/motion tracks)
 - **Two-stage generation** — half-res → neural upscale → refine
 - **HQ generation** — res_2s second-order sampler + CFG/STG guidance
 - **Prompt enhancement** — Gemma 3 12B rewrites short prompts into detailed descriptions
+- **Web UI** — Streamlit interface for easy video generation with prompt enhancement
 - **Training** — LoRA fine-tuning with flow matching (T2V and V2V strategies)
 - **3 model variants** — bf16, int8, int4 (fits 16GB–64GB Macs)
 - **3 upsamplers** — spatial 2x, spatial 1.5x, temporal 2x
@@ -33,6 +34,27 @@ uv sync --all-extras
 ```
 
 ## Quick Start
+
+### Web UI
+
+A Streamlit-based web interface is available for easier video generation:
+
+```bash
+# Start the web UI
+streamlit run app.py
+
+# Or with uv
+uv run streamlit run app.py
+```
+
+Features:
+- **Pipeline selector** — one-stage (fast, 8 steps), two-stage (CFG + upsampling), two-stage HQ (res_2s sampler)
+- **Video parameters** — height, width, frames, seed
+- **Prompt enhancement** — uses local Qwen3.5 GGUF model via llama-cpp-python to expand short prompts into detailed cinematic descriptions
+- **Real-time progress** — live generation logs and progress bar
+- **Video preview & download** — generated videos play inline with file size, duration, and download button
+
+Requirements: `streamlit`, `llama-cpp-python` with Qwen3.5 GGUF model at `~/models/Qwen3.5-27B.Q4_K_M.gguf`
 
 ### CLI
 
@@ -69,6 +91,30 @@ ltx-2-mlx generate -p "A cat" -o cat.mp4 --model dgrauet/ltx-2.3-mlx-q4
 
 # Model info
 ltx-2-mlx info --model dgrauet/ltx-2.3-mlx-q8
+
+# Training: preprocess videos into latents
+ltx-2-mlx preprocess \
+  --videos ./my_training_videos \
+  --captions ./my_captions \
+  --model dgrauet/ltx-2.3-mlx-q8 \
+  -o ./preprocessed_data
+
+# Training: train LoRA from config
+ltx-2-mlx train --config packages/ltx-trainer/configs/lora_t2v.yaml
+
+# IC-LoRA with depth map control
+ltx-2-mlx ic-lora \
+  --prompt "a person walking" \
+  --lora Lightricks/LTX-2.3-22b-IC-LoRA-Union-Control 1.0 \
+  --video-conditioning depth.mp4 1.0 \
+  -o output.mp4
+
+# IC-LoRA with motion tracks
+ltx-2-mlx ic-lora \
+  --prompt "particles moving" \
+  --lora Lightricks/LTX-2.3-22b-IC-LoRA-Motion-Track-Control 1.0 \
+  --video-conditioning tracks.mp4 1.0 \
+  -o output.mp4
 ```
 
 ### Python API
@@ -199,6 +245,24 @@ ltx-2-mlx keyframe   Keyframe interpolation (two-stage, dev model + CFG)
 ltx-2-mlx enhance    Prompt enhancement (no generation)
   --mode              "t2v" or "i2v" (default: t2v)
 
+ltx-2-mlx ic-lora    IC-LoRA control-conditioned generation
+  --prompt, -p        Text prompt (required)
+  --output, -o        Output .mp4 path (required)
+  --lora PATH STRENGTH LoRA weights + strength (repeatable, HF repo or local)
+  --video-conditioning PATH STRENGTH  Control video + strength (repeatable)
+  --image, -i         Optional reference image for I2V
+  --conditioning-strength  Attention strength 0.0-1.0 (default: 1.0)
+  --skip-stage-2      Skip stage 2 (half-res output)
+
+ltx-2-mlx train      Train LoRA or full model
+  --config, -c        Path to training config YAML (required)
+
+ltx-2-mlx preprocess Preprocess videos into latents + conditions
+  --videos, -v       Video directory (required)
+  --output, -o        Output directory (required)
+  --max-frames        Max frames per video (default: 97)
+  --captions          Caption directory (.txt files matching video stems)
+
 ltx-2-mlx info       Model info and memory estimate
 ```
 
@@ -237,8 +301,15 @@ Weights are pre-converted to MLX format by [mlx-forge](https://github.com/dgraue
 | Package | Description |
 |---------|-------------|
 | `ltx-core-mlx` | Model library: DiT, VAE, audio, text encoder, conditioning, guidance |
-| `ltx-pipelines-mlx` | Generation pipelines: T2V, I2V, A2V, retake, extend, keyframe, two-stage |
+| `ltx-pipelines-mlx` | Generation pipelines: T2V, I2V, A2V, retake, extend, keyframe, IC-LoRA, two-stage |
 | `ltx-trainer-mlx` | Training: LoRA fine-tuning with flow matching |
+
+## Additional Tools
+
+| File | Description |
+|------|-------------|
+| `app.py` | Streamlit Web UI for video generation with prompt enhancement |
+| `storyboard_pipeline.py` | Multi-shot storyboard generation from JSON (sequential shots → ffmpeg merge) |
 
 ## Resources
 

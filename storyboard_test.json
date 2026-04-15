@@ -1,0 +1,24 @@
+{
+  "title": "花园小狗",
+  "style_anchor": "cinematic 4K, warm lighting, natural colors",
+  "settings": {
+    "height": 256,
+    "width": 384,
+    "num_frames": 9,
+    "seed_base": 42,
+    "crossfade_duration": 0.3,
+    "output_dir": "output/storyboard_test"
+  },
+  "shots": [
+    {
+      "id": 1,
+      "prompt": "A golden retriever puppy playing in a sunny garden, flowers in background",
+      "ref_image": null
+    },
+    {
+      "id": 2,
+      "prompt": "The puppy runs towards the camera with a ball in its mouth",
+      "ref_image": "auto"
+    }
+  ]
+}

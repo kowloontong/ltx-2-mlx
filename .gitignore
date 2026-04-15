@@ -34,3 +34,14 @@ htmlcov/
 .DS_Store
 Thumbs.db
 .claude/
+
+# Model weights (large files)
+models/
+*.safetensors.index
+
+# Generated outputs
+outputs/
+
+# Tools with large dependencies
+tools/flux-klein9b/models/
+tools/models/

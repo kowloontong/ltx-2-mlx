@@ -1,0 +1,60 @@
+{
+  "title": "猫咪做饭记",
+  "style_anchor": "cinematic quality, photorealistic, high detail fur, subsurface scattering, warm natural lighting",
+  "character_description": "an anthropomorphic fluffy orange tabby cat wearing a casual dark vest over a white shirt",
+  "settings": {
+    "height": 480,
+    "width": 704,
+    "num_frames": 97,
+    "seed_base": 42,
+    "crossfade_duration": 0.5,
+    "output_dir": "output/cat_story"
+  },
+  "shots": [
+    {
+      "id": 1,
+      "prompt": "Cinematic wide shot: {character} walks confidently into a bustling outdoor vegetable market, morning sunlight streaming through canvas awnings, vendors and colorful produce visible in background",
+      "ref_image": null
+    },
+    {
+      "id": 2,
+      "prompt": "Medium close-up shot: {character} stands at a wooden vegetable stall, carefully picks up a fresh shiny red tomato with its paw, examining it with interest, soft natural light",
+      "ref_image": "auto"
+    },
+    {
+      "id": 3,
+      "prompt": "Over-the-shoulder shot: {character} points an excited paw at a fresh whole fish displayed on crushed ice at a seafood counter, vendor smiling in background",
+      "ref_image": "auto"
+    },
+    {
+      "id": 4,
+      "prompt": "Tracking shot from side view: {character} walks along a tree-lined cobblestone street carrying brown paper grocery bags, afternoon sunlight casting long shadows, content expression",
+      "ref_image": "auto"
+    },
+    {
+      "id": 5,
+      "prompt": "Eye-level shot: Inside a bright modern kitchen, {character} stands at a stainless steel sink washing green vegetables under running water, natural window light, clean countertops",
+      "ref_image": "auto"
+    },
+    {
+      "id": 6,
+      "prompt": "Top-down close-up shot: Focus on a wooden cutting board, {character} paws hold a small knife precisely chopping colorful vegetables into even pieces, ingredients neatly arranged",
+      "ref_image": "auto"
+    },
+    {
+      "id": 7,
+      "prompt": "Low angle shot: {character} stands by a gas stove stirring ingredients vigorously in a hot wok, steam and aromatic vapors rising dramatically, warm kitchen lighting from above",
+      "ref_image": "auto"
+    },
+    {
+      "id": 8,
+      "prompt": "Medium shot: {character} carefully places a beautifully arranged colorful steaming dish onto a rustic wooden dining table, garnish visible, proud expression",
+      "ref_image": "auto"
+    },
+    {
+      "id": 9,
+      "prompt": "Extreme close-up: {character} sits at the dining table, takes a bite of the prepared food, chews slowly with eyes closing in satisfaction, warm ambient lighting",
+      "ref_image": "auto"
+    }
+  ]
+}
