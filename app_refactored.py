@@ -312,10 +312,12 @@ with tab3:
                 output_path = output_dir / "flash_output.mp4"
                 filelist_path = output_dir / "filelist.txt"
                 
-                # Create file list
+                # Create file list with absolute paths
                 with open(filelist_path, "w") as f:
                     for path in segment_paths:
-                        f.write(f"file '{path}'\n")
+                        # Convert to absolute path
+                        abs_path = Path(path).resolve()
+                        f.write(f"file '{abs_path}'\n")
                 
                 # Concatenate with ffmpeg
                 cmd = [
