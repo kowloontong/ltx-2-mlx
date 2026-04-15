@@ -39,22 +39,52 @@ uv sync --all-extras
 
 A Streamlit-based web interface is available for easier video generation:
 
+#### Original Web UI
+
 ```bash
-# Start the web UI
+# Start the original web UI
 streamlit run app.py
 
 # Or with uv
 uv run streamlit run app.py
 ```
 
-Features:
+#### Refactored Web UI (Recommended)
+
+A refactored version with modular architecture and improved defaults:
+
+```bash
+# Start the refactored web UI
+streamlit run app_refactored.py
+
+# Or with uv
+uv run streamlit run app_refactored.py
+```
+
+**Refactored Web UI Features:**
+- **Modular architecture** — clean separation of config, state, and generators
+- **Default to two-stage HQ** — all workflows use highest quality by default
+- **Multiple workflows**:
+  - 🎬 **T2V Generation** — text-to-video with HQ mode
+  - 🎨 **Joint Workflow** — Flux image + LTX I2V (two-stage HQ)
+  - ⚡ **Flash Workflow** — multi-segment video (I2V or T2V mode)
+  - 🖼️ **I2V Generation** — image-to-video with HQ mode
+- **Flash workflow modes**:
+  - I2V mode: Flux image + LTX I2V for each segment
+  - T2V mode: Pure LTX T2V (no I2V)
+- **Configuration** — externalized via `configs/webui.yaml`
+- **Prompt enhancement** — Qwen3.5 GGUF model for detailed prompts
+
+**Original Web UI Features:**
 - **Pipeline selector** — one-stage (fast, 8 steps), two-stage (CFG + upsampling), two-stage HQ (res_2s sampler)
 - **Video parameters** — height, width, frames, seed
 - **Prompt enhancement** — uses local Qwen3.5 GGUF model via llama-cpp-python to expand short prompts into detailed cinematic descriptions
 - **Real-time progress** — live generation logs and progress bar
 - **Video preview & download** — generated videos play inline with file size, duration, and download button
 
-Requirements: `streamlit`, `llama-cpp-python` with Qwen3.5 GGUF model at `~/models/Qwen3.5-27B.Q4_K_M.gguf`
+**Requirements:** `streamlit`, `llama-cpp-python` with Qwen3.5 GGUF model at `~/models/Qwen3.5-27B.Q4_K_M.gguf`
+
+**Configuration:** Edit `configs/webui.yaml` to customize default parameters.
 
 ### CLI
 
