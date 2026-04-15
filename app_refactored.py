@@ -69,8 +69,8 @@ with tab1:
         use_hq = st.checkbox("使用 HQ 模式（推荐）", value=True, key="t2v_hq")
         use_two_stage = st.checkbox("使用两阶段", value=True, disabled=use_hq, key="t2v_two_stage")
         
-        height = st.number_input("Height", 256, 544, 576, 32, key="t2v_height")
-        width = st.number_input("Width", 384, 832, 832, 32, key="t2v_width")
+        height = st.number_input("Height", 256, 544, 480, 32, key="t2v_height")
+        width = st.number_input("Width", 384, 832, 704, 32, key="t2v_width")
         frames = st.number_input("Frames", 9, 193, 97, 8, key="t2v_frames")
         seed = st.number_input("Seed", value=42, key="t2v_seed")
         
@@ -243,8 +243,8 @@ with tab4:
         use_hq = st.checkbox("使用 HQ 模式（推荐）", value=True, key="i2v_hq")
         use_two_stage = st.checkbox("使用两阶段", value=True, disabled=use_hq, key="i2v_two_stage")
         
-        height = st.number_input("Height", 256, 544, 576, 32, key="i2v_height")
-        width = st.number_input("Width", 384, 832, 832, 32, key="i2v_width")
+        height = st.number_input("Height", 256, 544, 480, 32, key="i2v_height")
+        width = st.number_input("Width", 384, 832, 704, 32, key="i2v_width")
         frames = st.number_input("Frames", 9, 97, 65, 8, key="i2v_frames")
         seed = st.number_input("Seed", value=42, key="i2v_seed")
         

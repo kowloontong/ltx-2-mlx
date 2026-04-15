@@ -14,8 +14,8 @@ flux:
 ltx:
   model_dir: models/ltx-2.3-mlx-q8
   output_dir: outputs/webui
-  default_height: 576
-  default_width: 832
+  default_height: 480
+  default_width: 704
   default_frames: 97
 
 # Pipeline settings (defaults to two-stage HQ for best quality)
