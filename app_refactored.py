@@ -232,10 +232,21 @@ with tab3:
         
         if use_hq:
             pipeline_type = "two-stage-hq"
+            st.markdown("**HQ 参数**")
+            cfg_scale = st.slider("CFG Scale", 1.0, 7.0, 3.5, 0.5, key="flash_cfg")
+            stage1_steps = st.number_input("Stage 1 Steps", 5, 50, 20, 5, key="flash_s1")
+            stage2_steps = st.number_input("Stage 2 Steps", 1, 10, 5, 1, key="flash_s2")
         elif use_two_stage:
             pipeline_type = "two-stage"
+            st.markdown("**两阶段参数**")
+            cfg_scale = st.slider("CFG Scale", 1.0, 7.0, 3.5, 0.5, key="flash_cfg")
+            stage1_steps = st.number_input("Stage 1 Steps", 5, 50, 30, 5, key="flash_s1")
+            stage2_steps = st.number_input("Stage 2 Steps", 1, 10, 5, 1, key="flash_s2")
         else:
             pipeline_type = "one-stage"
+            cfg_scale = 3.0
+            stage1_steps = 30
+            stage2_steps = 3
     
     with col_content:
         theme_words = st.text_area(
@@ -311,6 +322,9 @@ with tab3:
                             frames=frames_per_segment,
                             seed=seed + i,
                             pipeline_type=pipeline_type,
+                            cfg_scale=cfg_scale,
+                            stage1_steps=stage1_steps,
+                            stage2_steps=stage2_steps,
                         )
                     else:
                         # T2V mode: Pure LTX T2V
@@ -322,6 +336,9 @@ with tab3:
                             frames=frames_per_segment,
                             seed=seed + i,
                             pipeline_type=pipeline_type,
+                            cfg_scale=cfg_scale,
+                            stage1_steps=stage1_steps,
+                            stage2_steps=stage2_steps,
                         )
                     
                     if not success:
