@@ -264,6 +264,10 @@ with tab3:
                     # I2V mode: Flux image + LTX I2V
                     # Step 1: Generate Flux image
                     image_path = temp_dir / f"image_{i:03d}.png"
+                    
+                    # Ensure parent directory exists
+                    image_path.parent.mkdir(parents=True, exist_ok=True)
+                    
                     success, error = flux_gen.generate(
                         prompt=scene,
                         output_path=str(image_path),
@@ -271,6 +275,8 @@ with tab3:
                     
                     if not success:
                         st.error(f"段 {i+1} Flux 生成失败: {error}")
+                        st.error(f"输出路径: {image_path}")
+                        st.error(f"路径存在: {image_path.parent.exists()}")
                         break
                     
                     # Step 2: Enhance prompt

@@ -64,5 +64,12 @@ class FluxGenerator(BaseGenerator):
         process = self.run_command(cmd, cwd=str(self.config.script_dir))
         returncode = self.wait_for_process(process)
 
-        success = returncode == 0 and Path(output_path).exists()
-        return success, "" if success else "Flux generation failed"
+        # Check result
+        output_exists = Path(output_path).exists()
+        
+        if returncode != 0:
+            return False, f"Flux generation failed (return code: {returncode})"
+        elif not output_exists:
+            return False, f"Flux output file not created: {output_path}"
+        else:
+            return True, ""
