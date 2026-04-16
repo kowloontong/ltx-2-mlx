@@ -42,6 +42,9 @@ class FluxGenerator(BaseGenerator):
         steps = steps or self.config.default_steps
         cfg_scale = cfg_scale or self.config.default_cfg_scale
 
+        # Convert output path to absolute path
+        output_path = str(Path(output_path).resolve())
+
         # Build command
         script_path = self.config.script_dir / "generate.py"
         cmd = [
