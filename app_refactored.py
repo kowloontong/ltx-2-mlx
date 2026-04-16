@@ -279,8 +279,8 @@ with tab3:
                         st.error(f"路径存在: {image_path.parent.exists()}")
                         break
                     
-                    # Step 2: Enhance prompt
-                    enhanced_prompt = prompt_enhancer.enhance_flash_prompt(scene, seed=seed + i)
+                    # Step 2: Enhance prompt (I2V mode - emphasize motion)
+                    enhanced_prompt = prompt_enhancer.enhance_flash_prompt(scene, seed=seed + i, mode="i2v")
                     
                     # Step 3: LTX I2V
                     success, error = ltx_gen.generate_i2v(
@@ -293,7 +293,7 @@ with tab3:
                     )
                 else:
                     # T2V mode: Pure LTX T2V
-                    enhanced_prompt = prompt_enhancer.enhance_flash_prompt(scene, seed=seed + i)
+                    enhanced_prompt = prompt_enhancer.enhance_flash_prompt(scene, seed=seed + i, mode="t2v")
                     
                     success, error = ltx_gen.generate_t2v(
                         prompt=enhanced_prompt,

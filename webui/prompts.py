@@ -157,33 +157,71 @@ Motion Description: {motion_description}"""
 
         return result["choices"][0]["message"]["content"].strip()
 
-    def enhance_flash_prompt(self, scene_description: str, seed: int = 10) -> str:
+    def enhance_flash_prompt(self, scene_description: str, seed: int = 10, mode: str = "t2v") -> str:
         """Enhance flash scene description with motion.
 
         Args:
             scene_description: Scene description.
             seed: Random seed.
+            mode: "t2v" or "i2v" - I2V needs more motion emphasis.
 
         Returns:
             Enhanced prompt with motion.
         """
-        # Simple rule-based enhancement for flash scenes
-        enhanced = scene_description
-
-        motion_map = {
-            "neon rain": "heavy neon rain pouring down streets, raindrops splashing",
-            "flying cars": "flying cars zooming through neon-lit alleys, light trails",
-            "dust storm": "massive dust storm swirling violently",
-            "neon lights": "neon lights flickering intensely, moving shadows",
-            "holographic": "holographic displays flickering, projecting moving figures",
-            "crowds": "busy crowds rushing past, moving chaotically",
-        }
-
-        for keyword, motion in motion_map.items():
-            if keyword.lower() in enhanced.lower():
-                enhanced = enhanced.replace(keyword, motion)
-
-        if "camera" not in enhanced.lower():
-            enhanced = enhanced + ", dynamic tracking camera movement"
-
-        return enhanced
+        # For I2V mode, emphasize specific motions to animate the static image
+        if mode == "i2v":
+            # I2V-specific motion patterns - focus on animating existing elements
+            motion_patterns = {
+                "neon rain": "raindrops falling continuously, water rippling on surfaces, neon reflections shimmering, puddles splashing with each drop",
+                "flying cars": "vehicles moving smoothly through frame, lights trailing behind, slight camera pan following motion",
+                "dust storm": "dust particles swirling in wind, debris floating past, atmospheric haze shifting",
+                "neon lights": "lights pulsing gently, shadows shifting subtly, glow breathing in and out",
+                "holographic": "hologram flickering with static, projection wavering slightly, colors shifting",
+                "crowds": "people walking naturally, subtle head movements, clothes swaying, ambient motion",
+                "city": "distant lights twinkling, traffic flowing in background, atmospheric movement",
+                "street": "leaves rustling, distant movement, ambient street activity",
+                "building": "lights turning on/off, windows flickering, subtle environmental motion",
+                "sky": "clouds drifting slowly, light changing gradually, atmospheric shift",
+            }
+            
+            enhanced = scene_description
+            
+            # Apply motion patterns
+            motion_applied = False
+            for keyword, motion in motion_patterns.items():
+                if keyword.lower() in enhanced.lower():
+                    enhanced = enhanced + f", {motion}"
+                    motion_applied = True
+                    break
+            
+            # If no specific pattern matched, add generic subtle motion
+            if not motion_applied:
+                enhanced = enhanced + ", subtle ambient motion, gentle environmental movement, natural animation"
+            
+            # Add camera motion for I2V (gentle, not jarring)
+            if "camera" not in enhanced.lower():
+                enhanced = enhanced + ", smooth subtle camera drift"
+            
+            return enhanced
+        
+        # For T2V mode, use original aggressive motion enhancement
+        else:
+            enhanced = scene_description
+            
+            motion_map = {
+                "neon rain": "heavy neon rain pouring down streets, raindrops splashing",
+                "flying cars": "flying cars zooming through neon-lit alleys, light trails",
+                "dust storm": "massive dust storm swirling violently",
+                "neon lights": "neon lights flickering intensely, moving shadows",
+                "holographic": "holographic displays flickering, projecting moving figures",
+                "crowds": "busy crowds rushing past, moving chaotically",
+            }
+            
+            for keyword, motion in motion_map.items():
+                if keyword.lower() in enhanced.lower():
+                    enhanced = enhanced.replace(keyword, motion)
+            
+            if "camera" not in enhanced.lower():
+                enhanced = enhanced + ", dynamic tracking camera movement"
+            
+            return enhanced
