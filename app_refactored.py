@@ -262,14 +262,17 @@ with tab3:
                 
                 if mode == "i2v":
                     # I2V mode: Flux image + LTX I2V
-                    # Step 1: Generate Flux image
+                    # Step 1: Generate Flux image with enhanced prompt
                     image_path = temp_dir / f"image_{i:03d}.png"
                     
                     # Ensure parent directory exists
                     image_path.parent.mkdir(parents=True, exist_ok=True)
                     
+                    # Enhance Flux prompt for better image quality
+                    flux_prompt = prompt_enhancer.enhance_flux_prompt(scene, seed=seed + i)
+                    
                     success, error = flux_gen.generate(
-                        prompt=scene,
+                        prompt=flux_prompt,
                         output_path=str(image_path),
                     )
                     

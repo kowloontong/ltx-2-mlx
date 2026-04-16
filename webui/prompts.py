@@ -182,6 +182,11 @@ Motion Description: {motion_description}"""
                 "street": "leaves rustling, distant movement, ambient street activity",
                 "building": "lights turning on/off, windows flickering, subtle environmental motion",
                 "sky": "clouds drifting slowly, light changing gradually, atmospheric shift",
+                "bazaars": "vendors moving slowly, fabric swaying, steam rising, ambient market sounds",
+                "vault": "machines humming, lights flickering, steam venting, mechanical sounds",
+                "skyline": "lights blinking, distant movement, atmospheric haze shifting",
+                "graveyard": "rust settling, debris floating, wind blowing through metal, eerie silence",
+                "ruins": "hologram glitching, static interference, projection unstable, artifacts appearing",
             }
             
             enhanced = scene_description
@@ -225,3 +230,46 @@ Motion Description: {motion_description}"""
                 enhanced = enhanced + ", dynamic tracking camera movement"
             
             return enhanced
+    
+    def enhance_flux_prompt(self, scene_description: str, seed: int = 10) -> str:
+        """Enhance Flux prompt for better image quality.
+
+        Args:
+            scene_description: Scene description.
+            seed: Random seed.
+
+        Returns:
+            Enhanced prompt for Flux image generation.
+        """
+        # Add quality and detail keywords for Flux
+        quality_keywords = [
+            "highly detailed",
+            "intricate details",
+            "sharp focus",
+            "professional photography",
+            "8k resolution",
+            "cinematic lighting",
+            "dramatic atmosphere",
+        ]
+        
+        # Scene-specific enhancements
+        scene_enhancements = {
+            "bazaars": "bustling market stalls, colorful fabrics, steam and smoke, crowded aisles",
+            "vault": "dark industrial interior, mechanical machinery, glowing panels, metal surfaces",
+            "skyline": "towering buildings, neon signs, flying vehicles, atmospheric perspective",
+            "graveyard": "rusted metal hulks, overgrown vegetation, scattered debris, moody lighting",
+            "ruins": "crumbling structures, holographic projections, glitching displays, decay",
+        }
+        
+        enhanced = scene_description
+        
+        # Add scene-specific details
+        for keyword, details in scene_enhancements.items():
+            if keyword.lower() in enhanced.lower():
+                enhanced = enhanced + f", {details}"
+                break
+        
+        # Add quality keywords
+        enhanced = enhanced + ", " + ", ".join(quality_keywords[:3])
+        
+        return enhanced
