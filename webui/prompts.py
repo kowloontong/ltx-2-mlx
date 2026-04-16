@@ -158,7 +158,7 @@ Motion Description: {motion_description}"""
         return result["choices"][0]["message"]["content"].strip()
 
     def enhance_flash_prompt(self, scene_description: str, seed: int = 10, mode: str = "t2v") -> str:
-        """Enhance flash scene description with motion.
+        """Enhance flash scene description using Qwen3.5 LLM.
 
         Args:
             scene_description: Scene description.
@@ -168,71 +168,73 @@ Motion Description: {motion_description}"""
         Returns:
             Enhanced prompt with motion.
         """
-        # For I2V mode, emphasize specific motions to animate the static image
+        # For I2V mode, use LLM to generate motion-focused prompt
         if mode == "i2v":
-            # I2V-specific motion patterns - focus on animating existing elements
-            motion_patterns = {
-                "neon rain": "raindrops falling continuously, water rippling on surfaces, neon reflections shimmering, puddles splashing with each drop",
-                "flying cars": "vehicles moving smoothly through frame, lights trailing behind, slight camera pan following motion",
-                "dust storm": "dust particles swirling in wind, debris floating past, atmospheric haze shifting",
-                "neon lights": "lights pulsing gently, shadows shifting subtly, glow breathing in and out",
-                "holographic": "hologram flickering with static, projection wavering slightly, colors shifting",
-                "crowds": "people walking naturally, subtle head movements, clothes swaying, ambient motion",
-                "city": "distant lights twinkling, traffic flowing in background, atmospheric movement",
-                "street": "leaves rustling, distant movement, ambient street activity",
-                "building": "lights turning on/off, windows flickering, subtle environmental motion",
-                "sky": "clouds drifting slowly, light changing gradually, atmospheric shift",
-                "bazaars": "vendors moving slowly, fabric swaying, steam rising, ambient market sounds",
-                "vault": "machines humming, lights flickering, steam venting, mechanical sounds",
-                "skyline": "lights blinking, distant movement, atmospheric haze shifting",
-                "graveyard": "rust settling, debris floating, wind blowing through metal, eerie silence",
-                "ruins": "hologram glitching, static interference, projection unstable, artifacts appearing",
-            }
+            system_prompt = """You are generating an I2V prompt to animate a static image.
+
+Guidelines:
+- The video should be CONTINUOUS MOTION from the static image
+- Focus on animating existing elements naturally
+- Use subtle, gentle motions (not dramatic changes)
+- Describe specific movements: water rippling, lights flickering, fabric swaying, etc.
+- Add ambient environmental motion
+- Use smooth camera drift (not jarring movements)
+- Keep the scene consistent with the image
+- Output: Single paragraph starting with motion description
+
+Example:
+Input: "neon rain-soaked street"
+Output: "Raindrops falling continuously, water rippling on wet surfaces, neon reflections shimmering in puddles, distant lights twinkling, smooth subtle camera drift, atmospheric rain sounds"
+
+Your output (motion-focused, natural animation):"""
+
+            llm = self._get_llm()
+            result = llm.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Animate this scene: {scene_description}"},
+                ],
+                max_tokens=256,
+                temperature=0.7,
+                seed=seed,
+            )
             
-            enhanced = scene_description
-            
-            # Apply motion patterns
-            motion_applied = False
-            for keyword, motion in motion_patterns.items():
-                if keyword.lower() in enhanced.lower():
-                    enhanced = enhanced + f", {motion}"
-                    motion_applied = True
-                    break
-            
-            # If no specific pattern matched, add generic subtle motion
-            if not motion_applied:
-                enhanced = enhanced + ", subtle ambient motion, gentle environmental movement, natural animation"
-            
-            # Add camera motion for I2V (gentle, not jarring)
-            if "camera" not in enhanced.lower():
-                enhanced = enhanced + ", smooth subtle camera drift"
-            
+            import gc
+            enhanced = result["choices"][0]["message"]["content"].strip()
+            gc.collect()
             return enhanced
         
-        # For T2V mode, use original aggressive motion enhancement
+        # For T2V mode, use LLM for creative prompt
         else:
-            enhanced = scene_description
+            system_prompt = """You are generating a T2V prompt for creative video generation.
+
+Guidelines:
+- Add dynamic, dramatic motion
+- Use active verbs and vivid descriptions
+- Include camera movements
+- Describe the full scene with action
+- Output: Single paragraph with motion and action
+
+Your output:"""
+
+            llm = self._get_llm()
+            result = llm.create_chat_completion(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Create video prompt for: {scene_description}"},
+                ],
+                max_tokens=256,
+                temperature=0.7,
+                seed=seed,
+            )
             
-            motion_map = {
-                "neon rain": "heavy neon rain pouring down streets, raindrops splashing",
-                "flying cars": "flying cars zooming through neon-lit alleys, light trails",
-                "dust storm": "massive dust storm swirling violently",
-                "neon lights": "neon lights flickering intensely, moving shadows",
-                "holographic": "holographic displays flickering, projecting moving figures",
-                "crowds": "busy crowds rushing past, moving chaotically",
-            }
-            
-            for keyword, motion in motion_map.items():
-                if keyword.lower() in enhanced.lower():
-                    enhanced = enhanced.replace(keyword, motion)
-            
-            if "camera" not in enhanced.lower():
-                enhanced = enhanced + ", dynamic tracking camera movement"
-            
+            import gc
+            enhanced = result["choices"][0]["message"]["content"].strip()
+            gc.collect()
             return enhanced
     
     def enhance_flux_prompt(self, scene_description: str, seed: int = 10) -> str:
-        """Enhance Flux prompt for better image quality.
+        """Enhance Flux prompt using Qwen3.5 LLM for better image quality.
 
         Args:
             scene_description: Scene description.
@@ -241,35 +243,29 @@ Motion Description: {motion_description}"""
         Returns:
             Enhanced prompt for Flux image generation.
         """
-        # Add quality and detail keywords for Flux
-        quality_keywords = [
-            "highly detailed",
-            "intricate details",
-            "sharp focus",
-            "professional photography",
-            "8k resolution",
-            "cinematic lighting",
-            "dramatic atmosphere",
-        ]
+        # Use LLM to enhance the prompt
+        system_prompt = """You are a Creative Assistant enhancing image generation prompts.
+Generate a detailed, high-quality prompt for image generation.
+
+Guidelines:
+- Add specific visual details and textures
+- Include lighting and atmosphere descriptions
+- Add quality keywords (detailed, sharp, professional)
+- Keep the original scene concept
+- Output: Single paragraph, no Markdown."""
+
+        llm = self._get_llm()
+        result = llm.create_chat_completion(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Enhance this image prompt: {scene_description}"},
+            ],
+            max_tokens=256,
+            temperature=0.7,
+            seed=seed,
+        )
         
-        # Scene-specific enhancements
-        scene_enhancements = {
-            "bazaars": "bustling market stalls, colorful fabrics, steam and smoke, crowded aisles",
-            "vault": "dark industrial interior, mechanical machinery, glowing panels, metal surfaces",
-            "skyline": "towering buildings, neon signs, flying vehicles, atmospheric perspective",
-            "graveyard": "rusted metal hulks, overgrown vegetation, scattered debris, moody lighting",
-            "ruins": "crumbling structures, holographic projections, glitching displays, decay",
-        }
-        
-        enhanced = scene_description
-        
-        # Add scene-specific details
-        for keyword, details in scene_enhancements.items():
-            if keyword.lower() in enhanced.lower():
-                enhanced = enhanced + f", {details}"
-                break
-        
-        # Add quality keywords
-        enhanced = enhanced + ", " + ", ".join(quality_keywords[:3])
-        
+        import gc
+        enhanced = result["choices"][0]["message"]["content"].strip()
+        gc.collect()
         return enhanced
