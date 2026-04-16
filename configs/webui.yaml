@@ -30,4 +30,4 @@ pipeline:
   i2v_frames: 65  # Fewer frames for I2V to maintain detail
 
 # Prompt enhancement model
-qwen_model_path: ~/models/Qwen3.5-27B.Q4_K_M.gguf
+qwen_model_path: ~/models/Qwopus3.5-27B-v3-Q4_K_M.gguf
