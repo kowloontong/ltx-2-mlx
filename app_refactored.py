@@ -407,8 +407,8 @@ with tab4:
     
     with col_params:
         st.subheader("⚙️ 参数设置")
-        use_hq = st.checkbox("使用 HQ 模式", value=False, key="i2v_hq", help="I2V 推荐使用单阶段")
-        use_two_stage = st.checkbox("使用两阶段", value=False, disabled=use_hq, key="i2v_two_stage", help="I2V 推荐使用单阶段")
+        use_hq = st.checkbox("使用 HQ 模式", value=False, key="i2v_hq", help="I2V 不推荐 HQ 模式，首帧一致性会降低")
+        use_two_stage = st.checkbox("使用两阶段", value=False, disabled=use_hq, key="i2v_two_stage", help="I2V 推荐单阶段，两阶段可用普通模式")
         
         st.markdown("**视频尺寸**")
         height = st.number_input("Height", 256, 544, 480, 32, key="i2v_height")
@@ -419,17 +419,17 @@ with tab4:
         if use_hq:
             pipeline_type = "two-stage-hq"
             st.markdown("**HQ 参数**")
-            st.warning("⚠️ I2V 两阶段模式 CFG 效果会被稀释")
+            st.warning("⚠️ HQ 模式使用 res_2s 采样器，首帧一致性会降低")
             cfg_scale = st.slider("CFG Scale", 1.0, 10.0, 6.0, 0.5, key="i2v_cfg", help="I2V 两阶段需要更高的 CFG")
             stage1_steps = st.number_input("Stage 1 Steps", 5, 50, 30, 5, key="i2v_s1")
             stage2_steps = st.number_input("Stage 2 Steps", 1, 10, 3, 1, key="i2v_s2", help="更少步数减少稀释")
         elif use_two_stage:
             pipeline_type = "two-stage"
             st.markdown("**两阶段参数**")
-            st.warning("⚠️ I2V 两阶段模式 CFG 效果会被稀释")
-            cfg_scale = st.slider("CFG Scale", 1.0, 10.0, 6.0, 0.5, key="i2v_cfg", help="I2V 两阶段需要更高的 CFG")
-            stage1_steps = st.number_input("Stage 1 Steps", 5, 50, 30, 5, key="i2v_s1")
-            stage2_steps = st.number_input("Stage 2 Steps", 1, 10, 3, 1, key="i2v_s2", help="更少步数减少稀释")
+            st.info("💡 普通两阶段使用 Euler 采样器，首帧一致性比 HQ 模式好")
+            cfg_scale = st.slider("CFG Scale", 1.0, 10.0, 5.0, 0.5, key="i2v_cfg", help="I2V 两阶段需要更高的 CFG")
+            stage1_steps = st.number_input("Stage 1 Steps", 5, 50, 25, 5, key="i2v_s1")
+            stage2_steps = st.number_input("Stage 2 Steps", 1, 10, 4, 1, key="i2v_s2")
         else:
             pipeline_type = "one-stage"
             st.success("✅ 单阶段模式（推荐）")
